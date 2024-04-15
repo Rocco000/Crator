@@ -62,7 +62,7 @@ class Configuration:
     def wait_request(self):
         return self.config['crawler.wait_request']
 
-    def max_depth(self):
+    def depth(self):
         return self.config['crawler.depth']
 
     def data_dir(self):

@@ -6,7 +6,6 @@ import concurrent.futures
 
 # Local import
 import crawler
-from utils.config import Configuration
 from utils.seeds import get_seeds
 from handler import TorHandler
 
@@ -58,8 +57,6 @@ if __name__ == '__main__':
     init_logger()
     logger = logging.getLogger("CRATOR")
     logger.info("CRATOR - START")
-
-    config = Configuration()
 
     seeds = get_seeds()
     logger.info(f"Urls to analyze: {', '.join(seeds)}")

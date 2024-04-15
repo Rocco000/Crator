@@ -31,7 +31,7 @@ class Crawler:
     """
     Crawler for tor onion links
     """
-    def __init__(self, seed, tor_handler=None):
+    def __init__(self, seed, tor_handler=None, crator_config_path=None, project_path=None):
         """
         Initialize the class crawler
         :param seed: the url to crawl
@@ -39,10 +39,10 @@ class Crawler:
         environment and the tor requests must be shared among the threads (e.g., if a webpage contains
         a captcha, the handler requests a new ip, blocking all the connections until the new ip.
         """
-        self.config = Configuration()
+        self.config = Configuration(crator_config_path)
         self.max_link = self.config.max_links()
         self.max_crawl_time = self.config.max_time()
-        self.max_depth = self.config.max_depth()
+        self.max_depth = self.config.depth()
         self.wait_request = int(self.config.wait_request()) / 1000
         self.max_retries = 5
         self.retries_counter = 0
@@ -72,12 +72,13 @@ class Crawler:
         data_dir = self.config.data_dir()
 
         # - Project directory
-        today_tms = datetime.now().strftime("%Y%m%d")
-        project_name = f"{self.config.project_name()}-{today_tms}"
-        project_path = os.path.join(data_dir, project_name)
+        if project_path is None:
+            today_tms = datetime.now().strftime("%Y%m%d")
+            project_name = f"{self.config.project_name()}-{today_tms}"
+            project_path = os.path.join(data_dir, project_name)
 
         if os.path.exists(project_path):
-            error_msg = f"Error: The project folder '{project_name}' already exists."
+            error_msg = f"Error: The project folder '{project_path}' already exists."
             raise FileExistsError(error_msg)
 
         os.makedirs(project_path, exist_ok=True)
