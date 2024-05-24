@@ -3,7 +3,7 @@ from scrapers import Scraper
 
 class Creator:
     """
-    This class implement the Factory method design pattern to create the right scraper for the crawler
+    This class implements the Factory method design pattern to create the correct scraper for the crawler.
     """
 
     def create_scraper(self, website:str, product_category: str) -> Scraper:
