@@ -3,6 +3,7 @@ import os
 import logging
 import time
 import threading
+import random
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 
@@ -25,15 +26,22 @@ class Downloader:
         self.running = True
         self.lock = threading.Lock()
         self.results = []
-        self.futures = []
+        self.futures = [] #list of asynchronous task to run a function (tor_handler, right?)
 
         self.future_url_map = {}
+
+        # To generate a random waiting time
+        self.lower_bound = self.waiting_time-0.5 if self.waiting_time > 0 and self.waiting_time-0.5 > 0 else 0
+        self.upper_bound = self.waiting_time+0.5 if self.waiting_time > 0 else 1.5
 
     def is_empty(self):
         # logger.debug(f"DOWNLOADER: Empty -> {not self.queue and not self.results}")
         return not self.queue and not self.futures
 
     def enqueue(self, url, cookie):
+        """
+        Add a tuple (url,coockie) to the queue
+        """
         self.queue.append((url, cookie))
 
     def has_results(self):
@@ -50,6 +58,11 @@ class Downloader:
 
     def get_results(self):
         # logger.debug(f"DOWNLOADER: Results: queue before -> {len(self.queue)}")
+        """
+        Update the futures list in order to contain only the futures not completed
+        :return: an iterator to wait and handle the completed tasks of a function
+        """
+        #create an iterator to wait and handle the completed tasks
         completed_futures = [future for future in concurrent.futures.as_completed(self.futures)]
 
         # Update self.futures to remove completed futures
@@ -89,7 +102,9 @@ class Downloader:
                         self.futures.append(future)
                         self.future_url_map[id(future)] = url
 
-                        time.sleep(self.waiting_time)
+                        # Get random waiting time
+                        random_waiting_time = round(random.uniform(self.lower_bound, self.upper_bound), 2)
+                        time.sleep(random_waiting_time)
 
     def stop(self):
         self.running = False
