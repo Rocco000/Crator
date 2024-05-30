@@ -14,10 +14,18 @@ logger = logging.getLogger("CRATOR")
 
 
 class Downloader:
-    def __init__(self, n_threads, torhandler, waiting_time=1.5):
+    def __init__(self, n_threads, torhandler, restart_tor:int, waiting_time=1.5):
+        """
+        :param n_threads: number of threads to use
+        :param torhandler: an istance of TorHandler
+        :param restart_tor: number of HTTP requests after which Tor is restarted
+        :param waiting_time: the amount of time in seconds that elapses between two HTTP requests
+        """
         self.queue = deque()
         self.n_threads = n_threads
         self.waiting_time = waiting_time
+        # number of HTTP requests after which Tor is restarted
+        self.restart_tor = restart_tor
 
         if torhandler and not isinstance(torhandler, TorHandler):
             raise TypeError("Invalid type for torhandler parameter. It must be a TorHandler class.")
@@ -102,9 +110,16 @@ class Downloader:
                         self.futures.append(future)
                         self.future_url_map[id(future)] = url
 
+                        if self.torhandler.n_requests_sent % self.restart_tor == 0:
+                            print("DOWNLOADER - Restart Tor (crawling)!")
+                            self.torhandler.renew_connection()
+                        
                         # Get random waiting time
                         random_waiting_time = round(random.uniform(self.lower_bound, self.upper_bound), 2)
                         time.sleep(random_waiting_time)
 
     def stop(self):
         self.running = False
+
+        # Stop Tor process
+        self.torhandler.stop_tor_process()
