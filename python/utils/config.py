@@ -34,6 +34,7 @@ class Configuration:
 
         # Compare the file's modification time with the last checked time
         if file_modified_time > self.last_checked_time:
+            print("file yaml modificato!")
             self.last_checked_time = file_modified_time
             return True
         else:
@@ -41,6 +42,7 @@ class Configuration:
 
     def load_yaml(self):
         if self.is_updated():
+            print("carico i dati del file yaml")
             with open(self.crator_path, 'r') as file:
                 self.config = yaml.safe_load(file)
 
@@ -52,6 +54,9 @@ class Configuration:
 
     def http_proxy(self):
         return self.config['http_proxy']
+    
+    def second_tor_proxy(self):
+        return self.config["second_tor_proxy"]
 
     def max_links(self):
         return self.config['crawler.max_links']
@@ -67,8 +72,32 @@ class Configuration:
 
     def data_dir(self):
         return self.config['data_directory']
+    
+    def tor_port(self):
+        return self.config['tor_port']
+    
+    def second_tor_port(self):
+        return self.config['second_tor_port']
+
+    def restart_tor(self):
+        return self.config["restart_tor"]
+    
+    def tor_password(self):
+        return self.config["tor_password"]
+    
+    def cookie_waiting_time(self):
+        return self.config["cookie_waiting_time"]
+    
+    def cookie_attempts(self):
+        return self.config["cookie_attempts"]
+    
+    def venv_path(self):
+        return self.config["venv_path"]
 
     def requires_cookies(self, seed):
+        """
+        Check if the yaml file there are cookies for the seed web site
+        """
         self.load_yaml()
 
         if 'crawler.cookies' not in self.config:
@@ -87,21 +116,48 @@ class Configuration:
         self.load_yaml()
 
         if 'crawler.cookies' not in self.config:
+            print("non c'e' il campo crawler.cookies nel yaml file")
             return False
 
         if not seed:
+            print("seed non fornito")
             return False
         #     return 'crawler.cookies' in self.config
 
         for cookie_by_seed in self.config.get('crawler.cookies', []):
+            # Cosa fa il 2 controllo?
+            # print("controllo non compreso in has_cookies:")
             if cookie_by_seed.get('seed') == seed and 'cookies' in cookie_by_seed:
+                print("trovato cookie per il seed")
                 return True
 
+        print("non c'e' un cookie per il seed")
         return False
 
     def cookies(self, seed):
+        print("\nfunzione cookies")
+        #self.load_yaml() gia' c'era questa riga
+        #print("Valore di has_cookies: ")
+        #print(self.has_cookies())
+   
+        flag_has_cookie = False
         self.load_yaml()
-        if not seed or not self.has_cookies():
+
+        if 'crawler.cookies' not in self.config:
+            print("non c'e' il campo crawler.cookies nel yaml file")
+            flag_has_cookie = False
+
+        if not seed:
+            print("seed non fornito")
+            flag_has_cookie = False
+
+        for cookie_by_seed in self.config.get('crawler.cookies', []):
+            if cookie_by_seed.get('seed') == seed and 'cookies' in cookie_by_seed:
+                flag_has_cookie = True
+                break
+
+        if not seed or not flag_has_cookie:#self.has_cookies():
+            print("return None 1")
             return None
 
         for cookie_by_seed in self.config.get('crawler.cookies', []):

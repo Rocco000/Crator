@@ -8,6 +8,7 @@ import concurrent.futures
 import crawler
 from utils.seeds import get_seeds
 from handler import TorHandler
+from utils.config import Configuration
 
 
 def init_logger():
@@ -60,15 +61,20 @@ if __name__ == '__main__':
 
     seeds = get_seeds()
     logger.info(f"Urls to analyze: {', '.join(seeds)}")
+    config = Configuration()
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(seeds)) as executor:
-        torhandler = TorHandler()
+        print("********************")
+        torhandler = TorHandler(config.tor_password(), config.tor_port(), config.http_proxy(), config.venv_path())
+        print("********************\n")
         crators = []
         futures = []
 
         for seed in seeds:
             print(f"Thread for the seed -> {seed}")
+            print("********************")
             crator = crawler.Crawler(seed, torhandler)
+            print("********************\n")
             crators.append(crator)
 
             future = executor.submit(crator.start)
