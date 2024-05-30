@@ -7,6 +7,11 @@ from fake_useragent import UserAgent
 from stem.control import Controller
 from stem import Signal
 from urllib.parse import urlparse
+import psutil
+import subprocess
+import re
+
+from http.cookies import SimpleCookie
 
 # Local imports
 from utils.config import Configuration
@@ -19,13 +24,33 @@ NEW_REQUEST_DELAY = 2
 
 
 class TorHandler:
-    def __init__(self):
-        config = Configuration()
-        http_proxy = config.http_proxy()
-        self.proxy = {"http": http_proxy, "https": http_proxy}
+    def __init__(self, tor_password:str, tor_port:int, proxy:str, venv_path:str):
+        """
+        :param tor_password: the password required to authenticate with the Tor control port. It should match the
+        hashed password set in the Tor configuration file (torrc).
+        :param tor_port: the port number on which the Tor control port is listening. 
+        :param proxy: the HTTP proxy address to route traffic through Tor. This should be in the format 'socks5h://127.0.0.1:PORT', where PORT
+        corresponds to the SOCKS port on which the Tor instance is listening.
+        :param venv_path: the path to the python virtual environment
+        """
+        print("TorHandler init")
+        self.proxy = {"http": proxy, "https": proxy}
         self.lock = threading.Lock()
 
         self.n_requests_sent = 0
+        self.tor_password = tor_password
+        self.tor_port = tor_port
+        self.venv_path = venv_path
+
+        # Get the socks port
+        pattern_socks_port = r".*:(\d+)"
+        match = re.search(pattern_socks_port, proxy)
+
+        self.socks_port = 0
+        if match:
+            self.socks_port = match.group(1)
+        else:
+            print("No socks port found!")
 
     def get_random_useragent(self):
         ua = UserAgent()
@@ -92,35 +117,195 @@ class TorHandler:
         logger.debug(f"TOR HANDLER - URL CHECK: FALSE")
         return False
 
-    def renew_connection(self):
+    def renew_connection(self) -> None:
+        """
+        Restarts Tor to change the IP address
+        """
         with self.lock:
-            logger.debug("TOR HANDLER - New ip generation...")
+            logger.debug(f"{type(self).__name__} - New ip generation...")
             header = {'User-Agent': self.get_random_useragent()}
             ip = requests.get('https://ident.me', proxies=self.proxy, headers=header).text
-            logger.debug(f"TOR HANDLER - Actual IP: {ip}")
-            # print(f"TOR HANDLER - Actual IP: {ip}")
 
-            # Send a request to tor asking for a new ip
-            with Controller.from_port(port=9051) as controller:
-                controller.authenticate(password='N0nn0')
+            logger.debug(f"{type(self).__name__}  - Actual IP: {ip}")
+            print(f"{type(self).__name__}  - Actual IP: {ip}")
+
+            # Send a request to Tor asking for a new IP address
+            with Controller.from_port(port=self.tor_port) as controller: #9051
+                controller.authenticate(self.tor_password) #"DaRk_Crawl3r00"
                 controller.signal(Signal.NEWNYM)
 
-            # Check if the ip has been changed
+            # Check if the IP address has been changed
             new_ip = self.get_ip()
             while new_ip == ip:
                 time.sleep(1)
                 new_ip = self.get_ip()
 
-            logger.debug(f"TOR HANDLER - New IP: {new_ip}")
-            # print(f"TOR HANDLER - New IP: {new_ip}")
+            logger.debug(f"{type(self).__name__}  - New IP: {new_ip}")
+            print(f"{type(self).__name__}  - New IP: {new_ip}")
 
     def get_ip(self):
         header = {'User-Agent': self.get_random_useragent()}
         return requests.get('https://ident.me', proxies=self.proxy, headers=header).text
 
+    def stop_tor_process(self) -> None:
+        """
+        Stop a Tor process listening on any of the specified ports.
+        """
+        try:
+            subprocess.run(['sudo', self.venv_path, 'python/utils/tor_process_handler.py', str(self.tor_port), str(self.socks_port)])
+        except psutil.AccessDenied:
+            print(f"{type(self).__name__} - Access denied - Insufficient permissions to access the process.")
+            logger.error(f"{type(self).__name__} - Access denied - Insufficient permissions to access the process.")
+        except psutil.ZombieProcess:
+            print(f"{type(self).__name__} - Zombie process - Process has already terminated but not yet cleaned up.")
+            logger.error(f"{type(self).__name__} - Zombie process - Process has already terminated but not yet cleaned up.")
+        except psutil.NoSuchProcess:
+            print(f"{type(self).__name__} - No such process - It might have been terminated already.")
+            logger.error(f"{type(self).__name__} - No such process - It might have been terminated already.")
+        except TypeError as e:
+            print(f"{e}")
+            logger.error(f"{type(self).__name__} - {e}")
+
+class TorCookiesHandler(TorHandler):
+    """
+        This class handle the acquaring of new Tor cookies and store it in the YAML file
+    """
+    def __init__(self, tor_password:str, tor_port:int, proxy:str, venv_path:str, waiting_time:int, attempts:int, homepage_url:str, seed:str) -> None:
+        """
+        :param tor_password: the password required to authenticate with the Tor control port. It should match the
+        hashed password set in the Tor configuration file (torrc).
+        :param tor_port: the port number on which the Tor control port is listening. 
+        :param proxy: the HTTP proxy address to route traffic through Tor. This should be in the format 'socks5h://127.0.0.1:PORT', where PORT
+        corresponds to the SOCKS port on which the Tor instance is listening.
+        :param venv_path: the path to the python virtual environment
+        :param waiting_time: the delay from two HTTP request
+        :param attempts: number of attempts for the second HTTP request to obtain the session cookie
+        :param homepage_url: the homepage url of the website to be crawled
+        :param seed: the url of the website to be crawled
+        """
+        print("TOR COOKIE HANDLER init")
+        super().__init__(tor_password, tor_port, proxy, venv_path)
+
+        self.waiting_time = waiting_time
+        self.attempts = attempts
+        self.homepage_url = homepage_url
+        self.config = Configuration()
+        self.seed = seed
+
+    def get_session_cookie_with_retries(self, header:dict, cookies:requests.cookies.RequestsCookieJar) -> str:
+        """
+        This function tries to get the session cookie from the HTTP response
+        :param header: the header obtained from the first HTTP request
+        :param  cookies: the cookies obtained from the first HTTP request
+        :return: a string containing the session cookie, otherwise None if the website doesn't reply
+        """
+        for attempt in range(self.attempts):
+            try:
+                # Make the second HTTP request
+                response_reload = requests.get(self.homepage_url, proxies=self.proxy, headers=header, cookies=cookies)
+                status_code = response_reload.status_code
+
+                print(f"\nTOR COOKIES HANDLER - STATUS CODE second HTTP request: {status_code}")
+
+                # Get cookies
+                reload_cookies = response_reload.cookies
+                print("Cookies after reload:")
+                for cookie in reload_cookies:
+                    print(f'{cookie.name}: {cookie.value}')
+
+                session = reload_cookies.get('session')
+
+                if session:
+                    return session
+            except requests.RequestException as e:
+                logger.error(f"TOR COOKIES HANDLER - Attempt {attempt + 1} failed: {e}")
+
+            # Retries after self.waiting_time to make another HTTP request if the session is None            
+            print(f"Attempt {attempt + 1} failed. Retrying in {self.waiting_time} seconds...")
+            time.sleep(self.waiting_time)
+        
+        return None
+    
+    def get_new_cookies(self) -> str:
+        """
+        Returns a new cookies for the crawler.
+        :return: a string containing new cookies to store in the YAML file, otherwise None if the website doesn't reply.
+        """
+        header = {'User-Agent': self.get_random_useragent()}
+        primary = secondary = session = None
+
+        try:
+            while not primary and not secondary:
+                # Make first HTTP request
+                first_response = requests.get(self.homepage_url, headers=header, proxies=self.proxy)
+                status_code = first_response.status_code
+
+                print(f"TOR COOKIES HANDLER - STATUS CODE first HTTP request:{status_code}")
+                logger.info(f"TOR COOKIES HANDLER - STATUS CODE first HTTP request: {status_code}")
+
+                # Get cookies
+                initial_cookies = first_response.cookies
+
+                primary = initial_cookies.get("primary")
+                secondary = initial_cookies.get("secondary")
+                session = initial_cookies.get("session")
+
+                print("Cookie after the first request")
+                print(f"primary: {primary}")
+                print(f"secondary: {secondary}")
+                print(f"session: {session}")
+
+                # If all these cookies are None retry the first HTTP request
+                if not primary and not secondary and not session:
+                    print("All cookies are None. Retry with the first HTTP request")
+                    logger.info("TOR COOKIE HANDLER - All the cookies are None, retry the first HTTP request")
+
+            if primary and secondary and not session:
+                # Get session from the second HTTP request
+                print("Trying to acquire the session cookie with a second HTTP request")
+                logger.info("Trying to acquire session cookie with a second HTTP request")
+                session = self.get_session_cookie_with_retries(header, initial_cookies)
+
+            if session:
+                # Increase the counter of HTTP requests sent
+                self.n_requests_sent += 1
+                primary = primary.strip()
+                secondary = secondary.strip()
+                session = session.strip()
+                
+                return f"primary={primary}; secondary={secondary}; session={session}"
+            else:
+                return None
+        except requests.RequestException as e:
+            logger.error(f"TOR COOKIES HANDLER - Initial request failed: {e}")
+            return None
+    
+    def store_new_cookie(self) -> None:
+        """
+        Stores new cookies in the YAML file
+        """
+        cookies = None
+        counter = 0
+
+        # Until we don't get a new cookie
+        while not cookies:
+            counter += 1
+            print(f"\nAttempts {counter} to get a new cookie...")
+
+            cookies = self.get_new_cookies()
+
+            if cookies:
+                # Store the new cookie in the YAML file
+                self.config.add_cookie(self.seed, cookies)
+                print("TOR COOKIE HANDLER - Added a new cookie!")
+                logger.info(f"TOR COOKIE HANDLER - Added a new cookie {cookies}")
+
+            # Restart Tor to get another IP address and, therefore a new identity
+            super().renew_connection()
 
 class CookieHandler:
     def __init__(self, seed, torhandler):
+        print("CookieHandler init")
         self.config = Configuration()
 
         self.seed = seed
@@ -158,6 +343,7 @@ class CookieHandler:
         return True
 
     def cookies_validity_check(self, url):
+        print("\ncookies_validity_check\n")
         logger.info(f"{self.seed} COOKIE HANDLER - Cookies validity check ")
         if not self.cookies or self.config.is_updated():
             try:
@@ -166,6 +352,7 @@ class CookieHandler:
             except:
                 error_msg = "No cookies found in the market config file"
                 logger.error(f"{self.seed} COOKIE HANDLER - {error_msg}")
+                print(f"in coockies_validity_check(): {self.seed} COOKIE HANDLER - {error_msg}")
                 raise FileNotFoundError(error_msg)
 
         if not self.cookies:
@@ -248,5 +435,5 @@ class CookieHandler:
 
 
 if __name__ == '__main__':
-    handler = TorHandler()
-    handler.renew_connection()
+    handler = TorHandler("abc", 9051, "socks5h://localhost:9050", "/home/rocco/Desktop/jads_project/Crator/.venv/bin/python")
+    handler.stop_tor_process()
