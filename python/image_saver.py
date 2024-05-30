@@ -56,6 +56,12 @@ class ImageSaver:
         #print("Aggiunto foto da salvare")
         self.queue.append((src_image, url, index_node, depth_node, cookie, count, product_information))
 
+    def is_empty(self) -> bool:
+        """
+        :return: True if the queue is not empty, False otherwise
+        """
+        return not self.queue
+
     def stop(self) -> None:
         self.running = False
 
