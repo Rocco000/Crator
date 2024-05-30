@@ -14,7 +14,7 @@ import csv
 import re
 
 # Local imports
-from handler import TorHandler, CookieHandler
+from handler import TorHandler, CookieHandler, TorCookiesHandler
 from monitor import CrawlerMonitor
 from detector import captcha_detector, login_redirection
 from downloader import Downloader
@@ -59,10 +59,10 @@ class Crawler:
 
         self.tor_handler = tor_handler
         if not self.tor_handler:
-            self.tor_handler = TorHandler()
+            self.tor_handler = TorHandler(self.config.tor_password(), self.config.tor_port(), self.config.http_proxy(), self.config.venv_path())
         self.actual_ip = self.tor_handler.get_ip()
 
-        self.downloader = Downloader(5, torhandler=self.tor_handler, waiting_time=self.wait_request)
+        self.downloader = Downloader(5, torhandler=self.tor_handler, restart_tor=self.config.restart_tor(), waiting_time=self.wait_request)
         self.downloader.start()
 
         self.cookie_handler = None
@@ -124,7 +124,7 @@ class Crawler:
         flag = bool(input("Are the images url of the seed encoded in base64? (0=no, 1= yes)\n"))
         self.imagesaver = ImageSaver(f"{split_project_name[0]} {split_project_name[1]}", self.image_path, self.image_mapping_path, split_project_name[2], split_project_name[3], self.tor_handler, flag)
         self.imagesaver.start()
-
+    
     def require_cookies(self):
         return self.config.requires_cookies(self.seed)
 
@@ -268,7 +268,6 @@ class Crawler:
         soup = BeautifulSoup(web_page.content, "html.parser", from_encoding="iso-8859-1")
 
         # Get all images
-        # img-thumbnail rounded m-0 p-0
         tags = soup.findAll("img")
         print(f"Number of img tags found in the web page is: {len(tags)}")
         logger.info(f"Number of img tags found in the web page is: {len(tags)}")
@@ -396,10 +395,13 @@ class Crawler:
             n_links_crawled = 0
             url_depth = {self.seed: 0}
             url_attempts = {}
+            retry_counts = {}
+
+            n_images = 0
 
             while (not self.downloader.is_empty() and n_links_crawled < self.max_link and not cookie_timeout and
                    time.time() - start_time < self.max_crawl_time):
-
+                
                 try:
                     #ottiene tutti i task completati, quindi le pagine del dark web
                     url_futures = self.downloader.get_results()
@@ -421,18 +423,32 @@ class Crawler:
                         
                         try:
                             web_page = future.result() #get the web page
+                            print(f"The url of the web page requested is: {web_page.url}")
                         except Exception as e:
-                            logger.error(f"{self.seed} - Error while processing a webpage. SKIP.")
-                            logger.error(f"{self.seed} - Error msg: {str(e)}")
-                            url = self.downloader.get_future_url(future)
-                            self.monitor.add_info_unvisited_page(int(time.time()), url, self.actual_ip, "ERROR")
+                            #url = self.downloader.get_future_url(future)
+                            #self.monitor.add_info_unvisited_page(int(time.time()), url, self.actual_ip, "ERROR")
+                            print(f"ERROR with this url: {url}")
+                            
+                            # Retry to crawl the web page only if the number of attempts is less than the maximum
+                            if url not in retry_counts:
+                                print("Retry with this url later")
+                                retry_counts[url] = 1
+                                self.enqueue_url(url)
+                            elif retry_counts[url] < MAX_RETRIES:
+                                print("Retry with this url later")
+                                retry_counts[url] += 1
+                                self.enqueue_url(url)
+                            else:
+                                print("Error while processing a webpage. SKIP.")
+                                logger.error(f"{url} - Error while processing a webpage. SKIP.")
+                                logger.error(f"{url} - Error msg: {str(e)}")
+                                self.monitor.add_info_unvisited_page(int(time.time()), url, self.actual_ip, "ERROR")
                             continue
 
                         if not web_page:
                             continue
 
                         # Check if the page is valid or not.
-                        #se non è valida va nell'if dopo?
                         if not self.validate(web_page):
                             if url not in url_attempts or url_attempts[url] < MAX_RETRIES:
                                 # si rimette l'url in coda per fare un altro tentativo?
@@ -480,13 +496,14 @@ class Crawler:
                         if node_index != 0: # To jump the image in the seed
                             try:
                                 internal_images = self.extract_internal_images(web_page)
+                                n_images += len(internal_images)
                             except Exception as e:
                                 logger.error(f"{self.seed} - Internal images extraction failed..")
                                 logger.error(f"{self.seed} - Error msg: {str(e)}")
                                 print("Internal images extraction failed...")
                                 print(f"Error message: {str(e)}")
                                 continue
-                        
+
                         # Get product information only if the crawler captures at least one image to download.
                         product_information = None
                         if internal_images and len(internal_images)>0:
@@ -569,6 +586,8 @@ class Crawler:
                     logger.error(f"{self.seed} - Error msg: {str(te)}")
                     cookie_timeout = True
 
+            logger.info(f"Number of images found: {n_images}")
+
             if self.downloader.is_empty():
                 logger.info(f"{self.seed} - Crawler END - All links have been crawled.")
             elif len(visited) >= self.max_link:
@@ -581,6 +600,11 @@ class Crawler:
             logger.error(f"{self.seed} - {str(e)}.")
             print(e)
 
+        # Waiting that the image saver queue is empty
+        while not self.imagesaver.is_empty():
+            pass
+
+        self.imagesaver.stop()
         self.downloader.stop()
         self.filesaver.stop()
         self.monitor.stop_program()
