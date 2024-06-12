@@ -182,7 +182,7 @@ class ImageSaver:
                             with open(self.image_mapping_file, "a") as csvfile:
                                 print("Updating the csv file")
                                 csv_writer = csv.writer(csvfile)
-                                csv_writer.writerow([self.website, file_name, str(index_node)+".html", url, depth_node, index_node, product_information["description"], product_information["vendor"], product_information["origin"], product_information["destination"], product_information["currency"], product_information["price"], product_information["cryptocurrency"], product_information["crypto_price"], self.macro_category, self.micro_category])
+                                csv_writer.writerow([self.website, file_name, str(index_node)+".html", url, depth_node, index_node, product_information["title"], product_information["description"], product_information["vendor"], product_information["origin"], product_information["destination"], product_information["currency"], product_information["price"], product_information["cryptocurrency"], product_information["crypto_price"], self.macro_category, self.micro_category])
                             time.sleep(0.1)
                         except TimeoutError:
                             logger.info(f"IMAGE SAVER - Timeout occurred while saving image: {file_name}")

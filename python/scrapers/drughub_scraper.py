@@ -11,6 +11,7 @@ class DrughubScraper(Scraper):
         soup = BeautifulSoup(web_page.content, "html.parser", from_encoding="iso-8859-1")
 
         product_information = {
+            "title": "",
             "description": "",
             "vendor": "",
             "origin": "",
@@ -20,6 +21,12 @@ class DrughubScraper(Scraper):
             "cryptocurrency": "",
             "crypto_price": 0.0
         }
+
+        # Extract the product title
+        product_title_tag = soup.find("h1", class_="h2 m-0 mb-1")
+
+        if product_title_tag:
+            product_information["title"] = product_title_tag.get_text(strip=True)
 
         div_descriptor = soup.find("div", id="listing_description")
 
@@ -97,7 +104,7 @@ class DrughubScraper(Scraper):
         # Make soup
         soup = BeautifulSoup(web_page.content, "html.parser", from_encoding="iso-8859-1")
 
-        for a_tag in soup.findAll("a"):
+        for a_tag in soup.findAll("a", class_="p-0 m-0 text-decoration-none fs-4"):
             # Check if the a tag has only text as child and its value is the category of interest
             if len(a_tag.findAll()) == 0 and self.product_category in a_tag.text.strip().lower():
                 return True
