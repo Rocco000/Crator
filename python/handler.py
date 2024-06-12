@@ -130,8 +130,8 @@ class TorHandler:
             print(f"{type(self).__name__}  - Actual IP: {ip}")
 
             # Send a request to Tor asking for a new IP address
-            with Controller.from_port(port=self.tor_port) as controller: #9051
-                controller.authenticate(self.tor_password) #"DaRk_Crawl3r00"
+            with Controller.from_port(port=self.tor_port) as controller:
+                controller.authenticate(self.tor_password)
                 controller.signal(Signal.NEWNYM)
 
             # Check if the IP address has been changed
@@ -209,9 +209,6 @@ class TorCookiesHandler(TorHandler):
 
                 # Get cookies
                 reload_cookies = response_reload.cookies
-                print("Cookies after reload:")
-                for cookie in reload_cookies:
-                    print(f'{cookie.name}: {cookie.value}')
 
                 session = reload_cookies.get('session')
 
@@ -250,15 +247,12 @@ class TorCookiesHandler(TorHandler):
                 secondary = initial_cookies.get("secondary")
                 session = initial_cookies.get("session")
 
-                print("Cookie after the first request")
-                print(f"primary: {primary}")
-                print(f"secondary: {secondary}")
-                print(f"session: {session}")
-
                 # If all these cookies are None retry the first HTTP request
                 if not primary and not secondary and not session:
                     print("All cookies are None. Retry with the first HTTP request")
                     logger.info("TOR COOKIE HANDLER - All the cookies are None, retry the first HTTP request")
+                
+                time.sleep(self.waiting_time)
 
             if primary and secondary and not session:
                 # Get session from the second HTTP request
@@ -280,28 +274,27 @@ class TorCookiesHandler(TorHandler):
             logger.error(f"TOR COOKIES HANDLER - Initial request failed: {e}")
             return None
     
-    def store_new_cookie(self) -> None:
+    def store_new_cookie(self) -> bool:
         """
         Stores new cookies in the YAML file
+        :return: True if a new cookie is obtained and written in the YAML file, False otherwise
         """
-        cookies = None
-        counter = 0
 
-        # Until we don't get a new cookie
-        while not cookies:
-            counter += 1
-            print(f"\nAttempts {counter} to get a new cookie...")
+        cookies = self.get_new_cookies()
 
-            cookies = self.get_new_cookies()
+        if cookies:
+            # Store the new cookie in the YAML file
+            self.config.add_cookie(self.seed, cookies)
+            print("TOR COOKIE HANDLER - Added a new cookie!")
+            logger.info(f"TOR COOKIE HANDLER - Added a new cookie {cookies}")
 
-            if cookies:
-                # Store the new cookie in the YAML file
-                self.config.add_cookie(self.seed, cookies)
-                print("TOR COOKIE HANDLER - Added a new cookie!")
-                logger.info(f"TOR COOKIE HANDLER - Added a new cookie {cookies}")
+        # Restart Tor to get another IP address and, therefore a new identity
+        super().renew_connection()
 
-            # Restart Tor to get another IP address and, therefore a new identity
-            super().renew_connection()
+        if cookies:
+            return True
+        else:
+            return False
 
 class CookieHandler:
     def __init__(self, seed, torhandler):

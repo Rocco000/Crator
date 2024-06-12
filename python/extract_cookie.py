@@ -34,18 +34,26 @@ if __name__ == '__main__':
     homepage_url = None
     if match:
         homepage_url = match.group(1)
+        print(homepage_url)
     
     tor_cookie_handler = TorCookiesHandler(config.tor_password(), config.second_tor_port(), config.second_tor_proxy(), config.venv_path(), config.cookie_waiting_time(), config.cookie_attempts(), homepage_url, seed)
     
     # Get the Tor port used by the crawler
     crawler_tor_port =config.tor_port()
     n_cookies = 0
+    counter = 1
 
     # Store cookies until the crawler doesn't stop
     while is_port_open("127.0.0.1", crawler_tor_port):
-        tor_cookie_handler.store_new_cookie()
-        print("*************************\n")
-        n_cookies += 1
+        print(f"Attempt {counter} to acquire a new cookie\n")
+        result = tor_cookie_handler.store_new_cookie()
+
+        counter += 1
+        
+        if result:
+            print("*************************\n")
+            n_cookies += 1
+            counter = 1
     
     print(f"Number of cookie extracted: {n_cookies}")
     tor_cookie_handler.stop_tor_process()
