@@ -26,6 +26,12 @@ class FileSaver:
 
     def start(self):
         threading.Thread(target=self.save, daemon=True).start()
+    
+    def is_empty(self) -> bool:
+        """
+        :return: True if the queue is not empty, False otherwise
+        """
+        return not self.queue
 
     def save(self):
         with ThreadPoolExecutor(max_workers=self.n_threads) as executor:

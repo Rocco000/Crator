@@ -55,7 +55,7 @@ def login_redirection(webpage, loginpage=None):
 
 def compare_page_contents(web_page_1, web_page_2):
     """
-    Check if different request responses have the same htnl content.
+    Check if different request responses have the same html content.
     :param web_page_1: :class requests.Response containing info crawled from an url.
     :param web_page_2: :class requests.Response containing info crawled from an url.
     :return: True if the page content is the same, False otherwise.

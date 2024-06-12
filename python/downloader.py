@@ -122,4 +122,5 @@ class Downloader:
         self.running = False
 
         # Stop Tor process
+        print("Stop the Tor process...")
         self.torhandler.stop_tor_process()
