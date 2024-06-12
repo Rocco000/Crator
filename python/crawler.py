@@ -110,7 +110,7 @@ class Crawler:
         if not os.path.exists(self.image_mapping_path):
             with open(self.image_mapping_path, "w") as csvfile:
                 csv_writer = csv.writer(csvfile)
-                csv_writer.writerow(["website", "image", "web_page", "url", "depth_node", "index_node", "description", "vendor", "origin", "destination", "currency", "price", "cryptocurrency", "crypto_price", "macro_category", "micro_category"])
+                csv_writer.writerow(["website", "image", "web_page", "url", "depth_node", "index_node", "title", "description", "vendor", "origin", "destination", "currency", "price", "cryptocurrency", "crypto_price", "macro_category", "micro_category"])
 
 
         self.monitor = CrawlerMonitor(project_path)
@@ -194,10 +194,6 @@ class Crawler:
         logger.debug(f"{self.seed} - Internal links - Request URL -> {request_url}")
         domain = urlparse(request_url).netloc
 
-        print(f"request_url: {request_url}")
-        print(f"domain: {domain}")
-        print(f"seed: {self.seed}")
-
         # Make soup
         soup = BeautifulSoup(web_page.content, "html.parser", from_encoding="iso-8859-1")
 
@@ -234,9 +230,12 @@ class Crawler:
                 #logger.info(f"The internal link points to a section within the current web page: {href}\n")
                 continue
 
+            if "login" in href:
+                # The internal link points to a login page
+                continue
+
             if url_category not in href:
-                # The internal link has wrong product category
-                #logger.info(f"This internal link has wrong product category: {href}\n")
+                # The internal link points to a info page
                 continue
             
             urls.add(href)
@@ -398,6 +397,7 @@ class Crawler:
             retry_counts = {}
 
             n_images = 0
+            n_wrong_category = 0
 
             while (not self.downloader.is_empty() and n_links_crawled < self.max_link and not cookie_timeout and
                    time.time() - start_time < self.max_crawl_time):
@@ -450,9 +450,13 @@ class Crawler:
 
                         # Check if the page is valid or not.
                         if not self.validate(web_page):
-                            if url not in url_attempts or url_attempts[url] < MAX_RETRIES:
-                                # si rimette l'url in coda per fare un altro tentativo?
+
+                            if url not in url_attempts:
                                 url_attempts[url] = 1
+                                self.enqueue_url(url)
+                                logger.debug(f"{self.seed} - Error while downloading the url -> {url}. RETRY.")
+                            elif url_attempts[url] < MAX_RETRIES:
+                                url_attempts[url] += 1
                                 self.enqueue_url(url)
                                 logger.debug(f"{self.seed} - Error while downloading the url -> {url}. RETRY.")
                             else:
@@ -470,15 +474,15 @@ class Crawler:
                             logger.info(f"{self.seed} the web page is not written in english")
                             continue
                         
-                        # If the url doesn't have ?page= as a string in it, it could be a wrong category. 
-                        # ?page= occurs when you click on a listing button for the products.
-                        if "?page=" not in url: # !!!! CONTROLLARE PERCHÈ I BOTTONI NON VANNO !!!!!!
-                            # Check if the current web page is in the right category
-                            print(f"URL: {url}")
-                            if not self.scraper.check_category(web_page):
-                                print(f"The web page category is wrong -> {url}")
-                                logger.info(f"The web page category is wrong -> {url}")
-                                continue
+                        # Check if the current web page is in the right category
+                        if not self.scraper.check_category(web_page):
+                            print(f"The web page category is wrong. URL: {url}")
+                            logger.info(f"The web page category is wrong. URL: {url}")
+                            n_wrong_category += 1
+
+                            # Save it to inspect afterwards
+                            # self.filesaver.enqueue(web_page, visited[url])
+                            continue
 
                         # Extract all the internal link in the web page
                         try:
@@ -532,27 +536,29 @@ class Crawler:
                         actual_url_node_index = visited[url]
 
                         # Enqueue new links and add edges
-                        print("Saving the internal links in the downloader queue...")
-                        for link in internal_urls:
-                            # Skip the link if the deep level is at least equal to the max deep level (configuration
-                            # setting)
-                            if depth + 1 > self.max_depth:
-                                logger.info(f"{self.seed} - URL {link}: depth value greater than {self.max_depth}. IGNORED.")
-                                unvisited_links.add(link)
-                                self.monitor.add_info_unvisited_page(int(time.time()), link, self.actual_ip, "MAX DEPTH")
-                            else:
-                                if link not in visited and link not in unvisited_links:
-                                    url_depth[link] = depth + 1
+                        if internal_urls and len(internal_urls)>0:
+                        
+                            print("Saving the internal links in the downloader queue...")
+                            for link in internal_urls:
+                                # Skip the link if the deep level is at least equal to the max deep level (configuration
+                                # setting)
+                                if depth + 1 > self.max_depth:
+                                    logger.info(f"{self.seed} - URL {link}: depth value greater than {self.max_depth}. IGNORED.")
+                                    unvisited_links.add(link)
+                                    self.monitor.add_info_unvisited_page(int(time.time()), link, self.actual_ip, "MAX DEPTH")
+                                else:
+                                    if link not in visited and link not in unvisited_links:
+                                        url_depth[link] = depth + 1
 
-                                    # Save scheduled page
-                                    self.monitor.add_scheduled_page(int(time.time()), link, self.actual_ip, depth + 1)
+                                        # Save scheduled page
+                                        self.monitor.add_scheduled_page(int(time.time()), link, self.actual_ip, depth + 1)
 
-                                    self.enqueue_url(link)
-                                    visited[link] = node_index #per non riprendere il link
-                                    self.monitor.add_node(link, node_index, depth + 1, str(node_index)+".html")
-                                    node_index += 1
+                                        self.enqueue_url(link)
+                                        visited[link] = node_index #per non riprendere il link
+                                        self.monitor.add_node(link, node_index, depth + 1, str(node_index)+".html")
+                                        node_index += 1
 
-                                self.monitor.add_edge(visited[url], visited[link])
+                                    self.monitor.add_edge(visited[url], visited[link])
 
                         # Get cookie to make a Tor request to download the image
                         cookie = None
@@ -586,7 +592,8 @@ class Crawler:
                     logger.error(f"{self.seed} - Error msg: {str(te)}")
                     cookie_timeout = True
 
-            logger.info(f"Number of images found: {n_images}")
+            logger.info(f"Number of images downloaded: {n_images}")
+            logger.info(f"Number of web pages with wrong category: {n_wrong_category}")
 
             if self.downloader.is_empty():
                 logger.info(f"{self.seed} - Crawler END - All links have been crawled.")
@@ -600,11 +607,17 @@ class Crawler:
             logger.error(f"{self.seed} - {str(e)}.")
             print(e)
 
+        self.downloader.stop()
+        self.monitor.stop_program()
+
         # Waiting that the image saver queue is empty
         while not self.imagesaver.is_empty():
             pass
 
         self.imagesaver.stop()
-        self.downloader.stop()
+
+        # Waiting that the file saver queue is empty
+        while not self.filesaver.is_empty():
+            pass
+        
         self.filesaver.stop()
-        self.monitor.stop_program()
