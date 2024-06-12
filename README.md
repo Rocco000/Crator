@@ -1,4 +1,5 @@
 # CRATOR
+![OncoVision logo](./tarantula.png)
 
 The goal of this project is to develop a web crawler tailored for extracting data from drug marketplaces on the dark web. The extracted data will be used to build a dataset for training an AI model capable of classifying different types of drugs. The crawler is designed to collect web pages, internal drug images, and drug descriptions from various marketplaces.
 
@@ -64,3 +65,7 @@ The goal of this project is to develop a web crawler tailored for extracting dat
  Then open a new terminal in your IDE and split it. In the first window run the crator.py file to crawl the dark web marketplace, instead in the second window run the extract_cookie.py file to acquire a new cookie to store in the YAML file.
 
 ## Future works
+
+## 📧 ​Contact
+
+ Rocco Iuliano - rocco.iul2000@gmail.com
