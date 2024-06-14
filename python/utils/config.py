@@ -94,6 +94,9 @@ class Configuration:
     def venv_path(self):
         return self.config["venv_path"]
 
+    def check_cookie(self):
+        return self.config["check_cookie"]
+
     def requires_cookies(self, seed):
         """
         Check if the yaml file there are cookies for the seed web site

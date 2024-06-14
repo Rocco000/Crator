@@ -52,6 +52,7 @@ class Crawler:
         self.max_retries = 5
         self.retries_counter = 0
         self.max_retries_before_renew = 5
+        self.check_cookie = self.config.check_cookie()
 
         self.seed = seed
         self.login_page = None
@@ -65,19 +66,22 @@ class Crawler:
         self.downloader = Downloader(5, torhandler=self.tor_handler, restart_tor=self.config.restart_tor(), waiting_time=self.wait_request)
         self.downloader.start()
 
+        # Get the right scraper through the Creator class
+        website = self.config.project_name().split("-")[0]
+        product_category = self.config.project_name().split("-")[3]
+        
+        self.scraper = Creator.create_scraper(website, product_category)
+
+        # Get the right captcha detector through the Creator class
+        self.captcha_detector = Creator.create_captcha_detctor(website)
+
         self.cookie_handler = None
         if self.config.has_cookies(seed):
-            self.cookie_handler = CookieHandler(self.seed, self.tor_handler)
+            self.cookie_handler = CookieHandler(self.seed, self.tor_handler, self.captcha_detector)
 
             self.bucket_cookies = None
             self.cookies = None
             self.cookie_wait = False
-        
-        # Get the right scraper through the Creator class
-        website = self.config.project_name().split("-")[0]
-        product_category = self.config.project_name().split("-")[3]
-        creator = Creator()
-        self.scraper = creator.create_scraper(website, product_category)
 
         if not self.scraper:
             raise ValueError("Expected a non-None value from create_scraper(), but got None")
@@ -222,12 +226,10 @@ class Crawler:
                 
             if "vendor" in href:
                 # The internal link is not a products link
-                #logger.info(f"This internal link is not a products link: {href}\n")
                 continue
 
             if "#" in href:
                 # The internal link points to a section within the current web page
-                #logger.info(f"The internal link points to a section within the current web page: {href}\n")
                 continue
 
             if "login" in href:
@@ -398,10 +400,13 @@ class Crawler:
 
             n_images = 0
             n_wrong_category = 0
+            count = 0
 
             while (not self.downloader.is_empty() and n_links_crawled < self.max_link and not cookie_timeout and
                    time.time() - start_time < self.max_crawl_time):
                 
+                count += 1
+
                 try:
                     #ottiene tutti i task completati, quindi le pagine del dark web
                     url_futures = self.downloader.get_results()
@@ -425,18 +430,18 @@ class Crawler:
                             web_page = future.result() #get the web page
                             print(f"The url of the web page requested is: {web_page.url}")
                         except Exception as e:
-                            #url = self.downloader.get_future_url(future)
-                            #self.monitor.add_info_unvisited_page(int(time.time()), url, self.actual_ip, "ERROR")
                             print(f"ERROR with this url: {url}")
                             
                             # Retry to crawl the web page only if the number of attempts is less than the maximum
                             if url not in retry_counts:
                                 print("Retry with this url later")
+                                logger.debug(f"Error while downloading the url -> {url}. RETRY.")
                                 retry_counts[url] = 1
                                 self.enqueue_url(url)
                             elif retry_counts[url] < MAX_RETRIES:
-                                print("Retry with this url later")
                                 retry_counts[url] += 1
+                                print("Retry with this url later")
+                                logger.debug(f"Error while downloading the url -> {url}. RETRY. Attempts: {retry_counts[url]}")
                                 self.enqueue_url(url)
                             else:
                                 print("Error while processing a webpage. SKIP.")
@@ -449,7 +454,8 @@ class Crawler:
                             continue
 
                         # Check if the page is valid or not.
-                        if not self.validate(web_page):
+                        if self.captcha_detector.has_captcha(web_page.content) or not self.validate(web_page):
+                            print("The web page contains a captcha")
 
                             if url not in url_attempts:
                                 url_attempts[url] = 1
@@ -462,6 +468,8 @@ class Crawler:
                             else:
                                 logger.error(f"{self.seed} - Error while downloading the url -> {url}. SKIPPED.")
                                 self.monitor.add_info_unvisited_page(int(time.time()), url, self.actual_ip, "ERROR")
+                            
+                            continue
 
                         # STATUS CODE CHECK
                         if web_page.status_code < 200 or web_page.status_code >= 300:
@@ -591,6 +599,10 @@ class Crawler:
                     logger.error(f"{self.seed} - Cookie timeout expired.")
                     logger.error(f"{self.seed} - Error msg: {str(te)}")
                     cookie_timeout = True
+                
+                if count % self.check_cookie == 0:
+                    self.cookie_handler.cookies_validity_check(self.seed)
+                    count = 0
 
             logger.info(f"Number of images downloaded: {n_images}")
             logger.info(f"Number of web pages with wrong category: {n_wrong_category}")
