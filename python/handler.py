@@ -17,6 +17,7 @@ from http.cookies import SimpleCookie
 from utils.config import Configuration
 import detector
 from exceptions import InvalidCookieException, HTTPStatusCodeError
+from detectors import CaptchaDetector
 
 logger = logging.getLogger("CRATOR")
 MAX_CONNECTION_ATTEMPT = 3
@@ -52,11 +53,23 @@ class TorHandler:
         else:
             print("No socks port found!")
 
-    def get_random_useragent(self):
+    def get_random_useragent(self) -> str:
+        """
+        Gets a random user agent string.
+
+        :return: A random user agent string.
+        """
         ua = UserAgent()
         return ua.random
 
-    def send_request(self, url, cookie=None):
+    def send_request(self, url:str, cookie:str =None):
+        """
+        Sends an HTTP request to obtain a web page.
+
+        :param url: the URL to send an HTTP request to
+        :param cookie: the cookie value to use in the HTTP header
+        :return: the web page pointed to by the URL
+        """
         if self.lock.locked():
             logger.debug("TOR HANDLER - Waiting for a new ip.")
         while self.lock.locked():
@@ -93,7 +106,7 @@ class TorHandler:
 
         return web_page
 
-    def is_url_reachable(self, url, cookie=None):
+    def is_url_reachable(self, url, cookie=None) -> bool:
         """
         Check if a url is reachable
         :param url: the url to analyze. It can be with or without scheme
@@ -119,7 +132,8 @@ class TorHandler:
 
     def renew_connection(self) -> None:
         """
-        Restarts Tor to change the IP address
+        Restarts Tor to change the IP address.
+        :return: None
         """
         with self.lock:
             logger.debug(f"{type(self).__name__} - New ip generation...")
@@ -127,7 +141,6 @@ class TorHandler:
             ip = requests.get('https://ident.me', proxies=self.proxy, headers=header).text
 
             logger.debug(f"{type(self).__name__}  - Actual IP: {ip}")
-            print(f"{type(self).__name__}  - Actual IP: {ip}")
 
             # Send a request to Tor asking for a new IP address
             with Controller.from_port(port=self.tor_port) as controller:
@@ -141,9 +154,12 @@ class TorHandler:
                 new_ip = self.get_ip()
 
             logger.debug(f"{type(self).__name__}  - New IP: {new_ip}")
-            print(f"{type(self).__name__}  - New IP: {new_ip}")
 
-    def get_ip(self):
+    def get_ip(self) -> str:
+        """
+        Returns the current IP address.
+        :return: the actual IP address.
+        """
         header = {'User-Agent': self.get_random_useragent()}
         return requests.get('https://ident.me', proxies=self.proxy, headers=header).text
 
@@ -297,7 +313,12 @@ class TorCookiesHandler(TorHandler):
             return False
 
 class CookieHandler:
-    def __init__(self, seed, torhandler):
+    def __init__(self, seed, torhandler:TorHandler, captcha_detector:CaptchaDetector):
+        """
+        :param seed: the URL to be cralwed
+        :param torhandler: an instance of TorHandler
+        :param captcha_detector: an instanca of CaptchaDetector
+        """
         print("CookieHandler init")
         self.config = Configuration()
 
@@ -308,6 +329,8 @@ class CookieHandler:
         self.bucket_cookies = None
         self.cookies = None
 
+        self.captcha_detector = captcha_detector
+
     @property
     def nocookiepage(self):
         return self._nocookiepage
@@ -316,7 +339,14 @@ class CookieHandler:
     def nocookiepage(self, page):
         self._nocookiepage = page
 
-    def is_valid(self, url, cookie):
+    def is_valid(self, url:str, cookie:str) -> bool:
+        """
+        Checks if the cookie is valid or not.
+
+        :param url: the url to send an HTTP request to check the cookie's validity.
+        :param cookie: the cookie value to check its validity.
+        :return: True if the cookie is valid, False otherwise.
+        """
         parsed = urlparse(url)
         if parsed.scheme not in ["http", "https"]:
             url = "http://" + url
@@ -326,7 +356,7 @@ class CookieHandler:
             if self.nocookiepage and detector.login_redirection(web_page, self.nocookiepage):
                 logger.info(f"{self.seed} COOKIE HANDLER - Validity CHECK: False -> Login redirection")
                 return False
-            if detector.captcha_detector(url, web_page):
+            if self.captcha_detector.has_captcha(web_page.content) or detector.captcha_detector(url, web_page):
                 logger.info(f"{self.seed} COOKIE HANDLER - Validity CHECK: False -> Captcha")
                 return False
         except Exception as e:
@@ -335,8 +365,14 @@ class CookieHandler:
 
         return True
 
-    def cookies_validity_check(self, url):
-        print("\ncookies_validity_check\n")
+    def cookies_validity_check(self, url:str) -> None:
+        """
+        Checks whether the cookies stored in the YAML file for the self.seed are still valid, otherwise, deletes them if they are not.
+
+        :param url: the url to send an HTTP request to check the cookie's validity.
+        :return: None
+        """
+        print("\nCOOKIE HANDLER - Cookies validity check\n")
         logger.info(f"{self.seed} COOKIE HANDLER - Cookies validity check ")
         if not self.cookies or self.config.is_updated():
             try:
@@ -363,7 +399,14 @@ class CookieHandler:
             else:
                 logger.info(f"{self.seed} - VALID COOKIE")
 
-    def get_random_cookie(self, url, validity_check=True):
+    def get_random_cookie(self, url:str, validity_check:bool =True) -> str:
+        """
+        Gets a random cookie from the bucket to use for an HTTP request.
+
+        :param url: the URL to send an HTTP request to, requiring a cookie.
+        :param validity_check: the flag indicating whether or not to check the validity of the cookie.
+        :return: a random cookie from the bucket.
+        """
         # Check if there are cookies in the cookie list. If not, read them from the market config file.
         if not self.cookies or self.config.is_updated():
             try:
@@ -409,9 +452,11 @@ class CookieHandler:
 
         return None
 
-    def remove_cookie(self, cookie):
+    def remove_cookie(self, cookie:str) -> None:
         """
         Remove the cookie from the list and in the market config file
+        :param cookie: the cookie to be removed.
+        :return: None
         """
         try:
             logger.debug(f"{self.seed} - REMOVE COOKIE")
