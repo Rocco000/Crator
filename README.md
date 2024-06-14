@@ -6,6 +6,7 @@ The goal of this project is to develop a web crawler tailored for extracting dat
 ## ⚙️ ​Project structure
 
  * **python** folder contains all the necessary scripts;
+    * **detectors** folder contains custom scripts for each dark web marketplace to detect the captchas;
     * **scrapers** folder contains custom scripts for each dark web marketplace to scrape them;
     * **utils** folder contains scripts to handle the crawler configuration and utility function to store data;
  * **resources** folder contains the seed from which the crawler starts and a YAML file to configure it;
@@ -41,9 +42,12 @@ The goal of this project is to develop a web crawler tailored for extracting dat
  * Define in the `second_tor_port` field the port number on which the Tor control port is listening (of the **second** Tor instance).
  * Define in the `tor_password` field the password required to authenticate with the Tor control port. It should match the hashed password set in the Tor configuration file (torrc).
  * Define in the `restart_tor` field the number of HTTP requests after which restart the **first** Tor instance.
- * Define in the `crawler.depth` the maximum depth at which the crawler can reach.
- * Define in the `crawler.wait_request` the waiting time between two HTTP requests.
- * Define in the `venv_path the path` of your python virtual environment. You can obtain it in this way: activate the environment and then execute this command `which python`
+ * Define in the `crawler.depth` field the maximum depth at which the crawler can reach.
+ * Define in the `crawler.wait_request` field the waiting time between two HTTP requests.
+ * Define in the `venv_path` field the path of your python virtual environment. You can obtain it in this way: activate the environment and then execute this command `which python`.
+ * Define in the `check_cookie` field the number after which check the cookies' validity stored in the YAML file.
+ * Define in the `cookie_attempts` field the maximum number of attempts to try to acquire a new cookie with `extract_cookie.py`.
+ * Define in the `cookie_waiting_time` field the amount of waiting time between two HTTP requests in case the acquiring cookie procedure encounters an issue.
  * Add at least two HTTP request cookie values in crawler.cookies field with relative seed
 
  You can see the actual YAML file to understand how setup it.
