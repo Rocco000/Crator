@@ -1,0 +1,2 @@
+from .captcha_detector import CaptchaDetector
+from .drughub_captcha_detector import DrughubCaptchaDetector
