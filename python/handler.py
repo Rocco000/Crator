@@ -68,7 +68,7 @@ class TorHandler:
 
         :param url: the URL to send an HTTP request to
         :param cookie: the cookie value to use in the HTTP header
-        :return: the web page pointed to by the URL
+        :return: the web page pointed at by the given URL and the used cookie.
         """
         if self.lock.locked():
             logger.debug("TOR HANDLER - Waiting for a new ip.")
@@ -104,7 +104,7 @@ class TorHandler:
         # if attempt >= MAX_CONNECTION_ATTEMPT:
         #     raise HTTPStatusCodeError(status_code)
 
-        return web_page
+        return web_page, cookie
 
     def is_url_reachable(self, url, cookie=None) -> bool:
         """
@@ -138,22 +138,26 @@ class TorHandler:
         with self.lock:
             logger.debug(f"{type(self).__name__} - New ip generation...")
             header = {'User-Agent': self.get_random_useragent()}
-            ip = requests.get('https://ident.me', proxies=self.proxy, headers=header).text
+            try:
+                ip = requests.get('https://api.ipify.org', proxies=self.proxy, headers=header).text.strip()
 
-            logger.debug(f"{type(self).__name__}  - Actual IP: {ip}")
+                logger.debug(f"{type(self).__name__}  - Actual IP: {ip}")
 
-            # Send a request to Tor asking for a new IP address
-            with Controller.from_port(port=self.tor_port) as controller:
-                controller.authenticate(self.tor_password)
-                controller.signal(Signal.NEWNYM)
+                # Send a request to Tor asking for a new IP address
+                with Controller.from_port(port=self.tor_port) as controller:
+                    controller.authenticate(self.tor_password)
+                    controller.signal(Signal.NEWNYM)
 
-            # Check if the IP address has been changed
-            new_ip = self.get_ip()
-            while new_ip == ip:
-                time.sleep(1)
+                # Check if the IP address has been changed
                 new_ip = self.get_ip()
+                while new_ip == ip:
+                    time.sleep(1)
+                    new_ip = self.get_ip()
 
-            logger.debug(f"{type(self).__name__}  - New IP: {new_ip}")
+                logger.debug(f"{type(self).__name__}  - New IP: {new_ip}")
+            except Exception as e:
+                logger.error(f"Error during IP renewal: {e}")
+    
 
     def get_ip(self) -> str:
         """
@@ -352,7 +356,7 @@ class CookieHandler:
             url = "http://" + url
 
         try:
-            web_page = self.tor_handler.send_request(url, cookie)
+            web_page, _ = self.tor_handler.send_request(url, cookie)
             if self.nocookiepage and detector.login_redirection(web_page, self.nocookiepage):
                 logger.info(f"{self.seed} COOKIE HANDLER - Validity CHECK: False -> Login redirection")
                 return False
@@ -405,7 +409,7 @@ class CookieHandler:
 
         :param url: the URL to send an HTTP request to, requiring a cookie.
         :param validity_check: the flag indicating whether or not to check the validity of the cookie.
-        :return: a random cookie from the bucket.
+        :return: a random cookie from the bucket, None otherwise.
         """
         # Check if there are cookies in the cookie list. If not, read them from the market config file.
         if not self.cookies or self.config.is_updated():

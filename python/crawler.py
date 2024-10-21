@@ -35,13 +35,15 @@ class Crawler:
     """
     Crawler for tor onion links
     """
-    def __init__(self, seed, tor_handler=None, crator_config_path=None, project_path=None):
+    def __init__(self, seed:str, tor_handler:TorHandler =None, crator_config_path:str =None, project_path:str =None):
         """
         Initialize the class crawler
         :param seed: the url to crawl
         :param tor_handler: an instance of the TorHandler class, useful when the crawler is executed in a multithread
         environment and the tor requests must be shared among the threads (e.g., if a webpage contains
         a captcha, the handler requests a new ip, blocking all the connections until the new ip.
+        :param crator_config_path: the path to the YAML file.
+        :param project_path: the path where the data will be stored.
         """
         print("Crawler init")
         self.config = Configuration(crator_config_path)
@@ -67,13 +69,19 @@ class Crawler:
         self.downloader.start()
 
         # Get the right scraper through the Creator class
-        website = self.config.project_name().split("-")[0]
-        product_category = self.config.project_name().split("-")[3]
+        website = self.config.marketplace()
+        product_category = self.config.macro_category()
         
         self.scraper = Creator.create_scraper(website, product_category)
 
+        if not self.scraper:
+            raise ValueError("Expected a non-None value from create_scraper(), but got None")
+
         # Get the right captcha detector through the Creator class
-        self.captcha_detector = Creator.create_captcha_detctor(website)
+        self.captcha_detector = Creator.create_captcha_detector(website)
+
+        if not self.captcha_detector:
+            raise ValueError("Expected a non-None value from create_captcha_detector(), but got None")
 
         self.cookie_handler = None
         if self.config.has_cookies(seed):
@@ -82,9 +90,6 @@ class Crawler:
             self.bucket_cookies = None
             self.cookies = None
             self.cookie_wait = False
-
-        if not self.scraper:
-            raise ValueError("Expected a non-None value from create_scraper(), but got None")
 
         # Config info
         data_dir = self.config.data_dir()
@@ -123,10 +128,10 @@ class Crawler:
         self.filesaver = FileSaver(self.page_path)
         self.filesaver.start()
 
-        # Get the macro and micro category
-        split_project_name = self.config.project_name().split("-")
+        # Get the micro category
+        micro = self.config.micro_category()
         flag = bool(input("Are the images url of the seed encoded in base64? (0=no, 1= yes)\n"))
-        self.imagesaver = ImageSaver(f"{split_project_name[0]} {split_project_name[1]}", self.image_path, self.image_mapping_path, split_project_name[2], split_project_name[3], self.tor_handler, flag)
+        self.imagesaver = ImageSaver(website, self.image_path, self.image_mapping_path, product_category, micro, self.tor_handler, flag)
         self.imagesaver.start()
     
     def require_cookies(self):
@@ -135,7 +140,7 @@ class Crawler:
     def get_info(self):
         return self.monitor.get_info()
 
-    def get_webpage_url(self, webpage):
+    def get_webpage_url(self, webpage) -> str:
         if not webpage:
             return None
 
@@ -153,7 +158,7 @@ class Crawler:
         print("Internal buttons extraction...")
         logger.info(f"{self.seed} - Internal buttons extraction")
         
-        website = self.config.project_name().split("-")[0]
+        website = self.config.marketplace()
 
         # Make soup
         soup = BeautifulSoup(web_page.content, "html.parser", from_encoding="iso-8859-1")
@@ -316,7 +321,13 @@ class Crawler:
             return False
 
 
-    def enqueue_url(self, url) -> None:
+    def enqueue_url(self, url:str) -> None:
+        """
+        Add the next URL to be crawled and a cookie in the downloader queue.
+
+        :param url: the URL to be crawled.
+        :return: None
+        """
         # TOR request
         cookie = None
 
@@ -375,7 +386,7 @@ class Crawler:
                 # Assumption: all the markets with no valid cookies redirect to the same page with the same url
                 logger.info(f"{self.seed} - Send a request without cookie to store the login redirect url")
 
-                self.login_page = self.tor_handler.send_request(self.seed)
+                self.login_page, _ = self.tor_handler.send_request(self.seed)
                 self.cookie_handler.nocookiepage = self.login_page
                 # logger.info(f"{self.market.upper()} - URL no cookie default redirect -> {self.loginpage.url}")
 
@@ -426,8 +437,9 @@ class Crawler:
                         else:
                             print(f"*********** Analyzing the node {node_index} ***********")
                         
+                        used_cookie = None
                         try:
-                            web_page = future.result() #get the web page
+                            web_page, used_cookie = future.result() #get the web page
                             print(f"The url of the web page requested is: {web_page.url}")
                         except Exception as e:
                             print(f"ERROR with this url: {url}")
@@ -457,6 +469,9 @@ class Crawler:
                         if self.captcha_detector.has_captcha(web_page.content) or not self.validate(web_page):
                             print("The web page contains a captcha")
 
+                            # Remove the used cookie
+                            self.cookie_handler.remove_cookie(used_cookie)
+                            # Re-add the URL to the Downloader list
                             if url not in url_attempts:
                                 url_attempts[url] = 1
                                 self.enqueue_url(url)
@@ -476,10 +491,10 @@ class Crawler:
                             self.monitor.add_info_page(int(time.time()), url, self.actual_ip, web_page.status_code)
                             continue
                         
-                        # Check if the page is in english
+                        # Check if the page is written in English
                         if not self.check_webpage_lang(web_page):
-                            print("The web page is not written in english")
-                            logger.info(f"{self.seed} the web page is not written in english")
+                            print("The web page is not written in English")
+                            logger.info(f"{self.seed} the web page is not written in English")
                             continue
                         
                         # Check if the current web page is in the right category
@@ -568,7 +583,7 @@ class Crawler:
 
                                     self.monitor.add_edge(visited[url], visited[link])
 
-                        # Get cookie to make a Tor request to download the image
+                        # Get a cookie to make a Tor request to download images
                         cookie = None
                         if self.require_cookies():
                             # Try to acquire a new cookie
@@ -580,7 +595,7 @@ class Crawler:
                                         sleep_seconds=1, timeout_seconds=MAX_COOKING_WAITING_TIME, waiting_for="waiting for new cookies.")
                         
                         # Save the images
-                        if actual_url_node_index != 0:
+                        if actual_url_node_index != 0 and internal_images and len(internal_images)>0:
                             print("Saving the internal images in the ImageSaver queue...")
                             i = 0
                             for img in internal_images:
@@ -600,9 +615,9 @@ class Crawler:
                     logger.error(f"{self.seed} - Error msg: {str(te)}")
                     cookie_timeout = True
                 
-                if count % self.check_cookie == 0:
-                    self.cookie_handler.cookies_validity_check(self.seed)
-                    count = 0
+                #if count % self.check_cookie == 0:
+                    #self.cookie_handler.cookies_validity_check(self.seed)
+                    #count = 0
 
             logger.info(f"Number of images downloaded: {n_images}")
             logger.info(f"Number of web pages with wrong category: {n_wrong_category}")

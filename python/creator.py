@@ -22,7 +22,7 @@ class Creator:
                 return None
     
     @staticmethod
-    def create_captcha_detctor(website:str) -> CaptchaDetector:
+    def create_captcha_detector(website:str) -> CaptchaDetector:
         """
         Returns the right captcha detector based on the website name
         :param website: website name
