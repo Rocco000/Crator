@@ -52,6 +52,15 @@ class Configuration:
 
         return 'default'
 
+    def marketplace(self):
+        return self.config['marketplace']
+    
+    def macro_category(self):
+        return self.config['macro_category']
+    
+    def micro_category(self):
+        return self.config['micro_category']
+    
     def http_proxy(self):
         return self.config['http_proxy']
     
@@ -99,7 +108,7 @@ class Configuration:
 
     def requires_cookies(self, seed):
         """
-        Check if the yaml file there are cookies for the seed web site
+        Check if the YAML file has cookies for the seed website
         """
         self.load_yaml()
 
@@ -138,7 +147,11 @@ class Configuration:
         return False
 
     def cookies(self, seed):
-        print("\nfunzione cookies")
+        """
+        Return all cookies in the YAML file for a given seed.
+        :param seed: the base URL from which the crawler starts.
+        :return: the cookie list of the given seed, None otherwise.
+        """
         #self.load_yaml() gia' c'era questa riga
         #print("Valore di has_cookies: ")
         #print(self.has_cookies())
@@ -147,11 +160,11 @@ class Configuration:
         self.load_yaml()
 
         if 'crawler.cookies' not in self.config:
-            print("non c'e' il campo crawler.cookies nel yaml file")
+            print("There is no crawler.cookies field in the YAML file")
             flag_has_cookie = False
 
         if not seed:
-            print("seed non fornito")
+            print("No seed provided")
             flag_has_cookie = False
 
         for cookie_by_seed in self.config.get('crawler.cookies', []):
@@ -160,7 +173,6 @@ class Configuration:
                 break
 
         if not seed or not flag_has_cookie:#self.has_cookies():
-            print("return None 1")
             return None
 
         for cookie_by_seed in self.config.get('crawler.cookies', []):
