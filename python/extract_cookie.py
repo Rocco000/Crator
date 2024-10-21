@@ -28,7 +28,7 @@ if __name__ == '__main__':
     if len(seeds) == 1:
         seed = seeds[0]
 
-    # Define a regulare expression to extract all the onion url
+    # Define a regular expression to extract the base onion URL, i.e. the homepage URL
     pattern = rf"(.*?{re.escape('.onion/')})"
     match = re.search(pattern, seed)
     homepage_url = None

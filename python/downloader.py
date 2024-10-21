@@ -34,7 +34,7 @@ class Downloader:
         self.running = True
         self.lock = threading.Lock()
         self.results = []
-        self.futures = [] #list of asynchronous task to run a function (tor_handler, right?)
+        self.futures = [] #list of asynchronous task to run a function (tor_handler.send_request)
 
         self.future_url_map = {}
 

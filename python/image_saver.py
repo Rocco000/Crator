@@ -122,7 +122,7 @@ class ImageSaver:
                                 img_url = src_tag
                             
                             #Send request to obtain the image
-                            img_response = self.tor_handler.send_request(img_url, cookie)
+                            img_response, _ = self.tor_handler.send_request(img_url, cookie)
 
                             # Check if the request was successful
                             if img_response.status_code == 200:
