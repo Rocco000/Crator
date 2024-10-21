@@ -32,8 +32,11 @@ class DrughubScraper(Scraper):
 
         # Extract the description
         if div_descriptor and len(div_descriptor.contents) == 1 and isinstance(div_descriptor.contents[0], str):
-            # replace() to remove \n
-            x = div_descriptor.get_text(strip=True).replace("\n", " ")
+            x = div_descriptor.get_text(strip=True)
+
+            # Replace 1 or more \n with whitespace
+            x = re.sub(r"\n+", " ", x)
+
             # Replace one or more white space with only one white space
             product_information["description"] = re.sub(r"\s+", " ", x)
 
@@ -46,50 +49,28 @@ class DrughubScraper(Scraper):
                 product_information["vendor"] = a_tag.text.strip()
                 break
         
-        # Extract product location and price
-        for div in soup.findAll("div"):
-            children = list(div.children)
-            div_text = div.get_text()
+        # Extract shipping information and price
+        for div in soup.findAll("div", class_="col-auto"):
+            div_text = div.get_text(" ",strip=True)
 
-            if len(children) == 5 and "Shipping from" in div_text:
+            match = re.search(r"Shipping from\s+(.+?)\s+to\s+(.+)", div_text)
+            if match:
+                product_information["origin"] = match.group(1)
+                product_information["destination"] = match.group(2)
 
-                # Regex to extract the two locations
-                pattern_location = r'from\s+(\w+)\s+to\s+(\w+)'
-                match = re.search(pattern_location, div_text)
+            # Extract price information
+            match = re.search(r"Price \((\w+)\):\s*([\d.]+)", div_text)
 
-                if match:
-                    product_information["origin"] = match.group(1)
-                    product_information["destination"] = match.group(2)
-            elif len(children) == 3 and "Price" in div_text:
+            if match:
+                currency = match.group(1)
+                price = match.group(2)
 
-                # Check whether the price is a monetary or cryptocurrency price
-                if "EUR" in div_text or "USD" in div_text or "GBP" in div_text or "CHF" in div_text or "CAD" in div_text or "AUD" in div_text or "NZD" in div_text:
-                    
-                    # Regex to extract the currency
-                    pattern_currency = r'\((.*?)\)'
-                    matches = re.findall(pattern_currency, div_text)
-                    if matches:
-                        product_information["currency"] = matches[0]
-
-                    # Regex to extract the price
-                    pattern_price = r'\b\d+\.\d+\b'
-                    matches = re.findall(pattern_price, div_text)
-                    if matches:
-                        product_information["price"] = float(matches[0])
+                if "EUR" in currency or "USD" in currency or "GBP" in currency or "CHF" in currency or "CAD" in currency or "AUD" in currency or "NZD" in currency:
+                    product_information["currency"] = currency
+                    product_information["price"] = price
                 else:
-                    
-                    # Regex to extract the crypto currency
-                    pattern_crypto_currency = r'\((.*?)\)'
-                    matches = re.findall(pattern_crypto_currency, div_text)
-                    if matches:
-                        product_information["cryptocurrency"] = matches[0]
-
-                    # Regex to extract the price
-                    pattern_price = r'\b\d+\.\d+\b'
-                    matches = re.findall(pattern_price, div_text)
-
-                    if matches:
-                        product_information["crypto_price"] = float(matches[0])
+                    product_information["cryptocurrency"] = currency
+                    product_information["crypto_price"] = price
         
         return product_information
 
