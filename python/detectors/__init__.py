@@ -1,2 +1,2 @@
-from .captcha_detector import CaptchaDetector
-from .drughub_captcha_detector import DrughubCaptchaDetector
+from .detectors import CaptchaDetector, WaitingPageDetector
+from .drughub_detectors import DrughubCaptchaDetector, DrughubWaitingPageDetector

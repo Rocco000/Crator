@@ -71,8 +71,9 @@ class Crawler:
         # Get the right scraper through the Creator class
         website = self.config.marketplace()
         product_category = self.config.macro_category()
+        micro = self.config.micro_category()
         
-        self.scraper = Creator.create_scraper(website, product_category)
+        self.scraper = Creator.create_scraper(website, product_category, micro)
 
         if not self.scraper:
             raise ValueError("Expected a non-None value from create_scraper(), but got None")
@@ -82,6 +83,11 @@ class Crawler:
 
         if not self.captcha_detector:
             raise ValueError("Expected a non-None value from create_captcha_detector(), but got None")
+        
+        # Get the right waiting page detector through the Creator class
+        self.waiting_page_detector = Creator.create_waiting_page_detector(website)
+        if not self.captcha_detector:
+            raise ValueError("Expected a non-None value from create_waiting_page_detector(), but got None")
 
         self.cookie_handler = None
         if self.config.has_cookies(seed):
@@ -128,8 +134,7 @@ class Crawler:
         self.filesaver = FileSaver(self.page_path)
         self.filesaver.start()
 
-        # Get the micro category
-        micro = self.config.micro_category()
+        # Create the ImageSaver
         flag = bool(input("Are the images url of the seed encoded in base64? (0=no, 1= yes)\n"))
         self.imagesaver = ImageSaver(website, self.image_path, self.image_mapping_path, product_category, micro, self.tor_handler, flag)
         self.imagesaver.start()
@@ -284,7 +289,6 @@ class Crawler:
 
                 # Check if the image is valid
                 if self.scraper.check_image(class_value): 
-                    print("The image has the class name that I want")
                     src_tag = None
                     try:
                         src_tag = img_tag["src"]
@@ -439,7 +443,8 @@ class Crawler:
                         
                         used_cookie = None
                         try:
-                            web_page, used_cookie = future.result() #get the web page
+                            # Get the web page and the used cookie
+                            web_page, used_cookie = future.result()
                             print(f"The url of the web page requested is: {web_page.url}")
                         except Exception as e:
                             print(f"ERROR with this url: {url}")
@@ -465,7 +470,16 @@ class Crawler:
                         if not web_page:
                             continue
 
-                        # Check if the page is valid or not.
+                        # Check whether the web page is a waiting page
+                        if self.waiting_page_detector.is_waiting_page(web_page.content):
+                            print(f"Detect a waiting page for URL: {url}")
+                            logger.debug(f"Detect a waiting page for URL: {url}. RETRY.")
+
+                            # Retry to crawl the web page later
+                            self.enqueue_url(url)
+                            continue
+
+                        # Check whether the web page is valid or not.
                         if self.captcha_detector.has_captcha(web_page.content) or not self.validate(web_page):
                             print("The web page contains a captcha")
 
@@ -639,12 +653,12 @@ class Crawler:
 
         # Waiting that the image saver queue is empty
         while not self.imagesaver.is_empty():
-            pass
+            time.sleep(1)
 
         self.imagesaver.stop()
 
         # Waiting that the file saver queue is empty
         while not self.filesaver.is_empty():
-            pass
+            time.sleep(1)
         
         self.filesaver.stop()
