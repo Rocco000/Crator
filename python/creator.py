@@ -1,6 +1,9 @@
-from scrapers import DrughubScraper
 from scrapers import Scraper
-from detectors import CaptchaDetector, WaitingPageDetector, DrughubCaptchaDetector, DrughubWaitingPageDetector
+from scrapers import DrughubScraper, CocoricoScraper
+from detectors import CaptchaDetector, WaitingPageDetector
+from detectors import DrughubCaptchaDetector, DrughubWaitingPageDetector, CocoricoCaptchaDetector, CocoricoWaitingPageDetector
+from extractors import BaseCookieExtractor, CocoricoCookieExtractor, DrughubCookieExtractor
+from handler import TorHandler
 
 class Creator:
     """
@@ -20,6 +23,8 @@ class Creator:
         match website:
             case "drughub":
                 return DrughubScraper(product_category, product_micro_category)
+            case "cocorico":
+                return CocoricoScraper(product_category, product_micro_category)
             case _:
                 return None
     
@@ -35,6 +40,8 @@ class Creator:
         match website:
             case "drughub":
                 return DrughubCaptchaDetector()
+            case "cocorico":
+                return CocoricoCaptchaDetector()
             case _:
                 return None
             
@@ -50,5 +57,29 @@ class Creator:
         match website:
             case "drughub":
                 return DrughubWaitingPageDetector()
+            case "cocorico":
+                return CocoricoWaitingPageDetector()
+            case _:
+                return None
+            
+    @staticmethod
+    def create_cookie_extractor(tor_handler:TorHandler, homepage_url:str, seed:str, waiting_time:int, attempts:int, ) -> BaseCookieExtractor:
+        """
+        Create the right cookie extractor instance
+        
+        :param tor_handler:  an instance of TorHandler to handle HTTP requests
+        :param homepage_url: the homepage url of the website to be crawled
+        :param seed: the seed URL to be crawled
+        :param waiting_time: the delay from two HTTP request
+        :param attempts: number of attempts for the second HTTP request to obtain the session cookie
+        :return: a cookie extractor
+        """
+
+        website = website.strip().lower()
+        match website:
+            case "drughub":
+                return DrughubCookieExtractor(tor_handler, homepage_url, seed, waiting_time, attempts)
+            case "cocorico":
+                return CocoricoCookieExtractor(tor_handler, homepage_url, seed, waiting_time, attempts)
             case _:
                 return None
