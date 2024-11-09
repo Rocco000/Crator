@@ -14,7 +14,7 @@ import csv
 import re
 
 # Local imports
-from handler import TorHandler, CookieHandler, TorCookiesHandler
+from handler import TorHandler, CookieHandler
 from monitor import CrawlerMonitor
 from detector import captcha_detector, login_redirection
 from downloader import Downloader
@@ -135,8 +135,8 @@ class Crawler:
         self.filesaver.start()
 
         # Create the ImageSaver
-        flag = bool(input("Are the images url of the seed encoded in base64? (0=no, 1= yes)\n"))
-        self.imagesaver = ImageSaver(website, self.image_path, self.image_mapping_path, product_category, micro, self.tor_handler, flag)
+        flag = bool(int(input("Are the images url of the seed encoded in base64? (0=no, 1= yes)\n")))
+        self.imagesaver = ImageSaver(website, self.image_path, self.image_mapping_path, product_category, micro, self.scraper, self.tor_handler, flag)
         self.imagesaver.start()
     
     def require_cookies(self):
@@ -173,20 +173,18 @@ class Crawler:
         buttons = soup.findAll("button")
         logger.info(f"Number of internal buttons: {len(buttons)}")
 
-        if website == "drughub":
-            
-            for button in buttons:
-                # Get the value attribute of the button
-                value = button.get("value")
-                # Get the button text
-                text_content = button.text.strip()
+        for button in buttons:
+            # Get the value attribute of the button
+            value = button.get("value")
+            # Get the button text
+            text_content = button.text.strip()
 
-                # Check if the button value and text are a digit and they are not None
-                if value and text_content and value.isnumeric() and (text_content.isnumeric() or text_content == "»"):
-                    value = int(value)
-                    if value != 0:
-                        url = urljoin(self.seed, f"?page={value}")
-                        urls.add(url)
+            # Check if the button value and text are a digit and they are not None
+            if value and text_content and value.isnumeric() and text_content.isnumeric():
+                value = int(value)
+                if value != 0:
+                    url = urljoin(self.seed, f"?page={value}")
+                    urls.add(url)
         
         urls_list = list(urls)
         print(f"Number of extracted button links: {len(urls_list)}")
@@ -212,9 +210,10 @@ class Crawler:
         soup = BeautifulSoup(web_page.content, "html.parser", from_encoding="iso-8859-1")
 
         urls = set()
-        # Get the seed to filter the internal links -> RENDERE GENERALE
-        x = urlparse(self.seed).path.split("/")
-        url_category = "/".join(x[-2:])
+        
+        # Get product category expressed in the URL to filter the extracted URLs
+        url_category = self.scraper.get_url_category(self.seed)
+        
         print(f"Category in url format: {url_category}")
           
         # Get all internal links
@@ -234,7 +233,7 @@ class Crawler:
                 # external link
                 continue
                 
-            if "vendor" in href:
+            if "vendor" in href or "seller" in href:
                 # The internal link is not a products link
                 continue
 
@@ -284,24 +283,22 @@ class Crawler:
         logger.info(f"Number of img tags found in the web page is: {len(tags)}")
         
         for img_tag in tags:
-            if img_tag.has_attr("class"):
-                class_value = " ".join(img_tag["class"])
 
-                # Check if the image is valid
-                if self.scraper.check_image(class_value): 
-                    src_tag = None
-                    try:
-                        src_tag = img_tag["src"]
-                    except KeyError:
-                        print(f"Found <img> tag without 'src' attribute")
-                        logger.warning(f"{self.seed} - Found <img> tag without 'src' attribute")
-                        continue 
+            # Check if the image is valid
+            if self.scraper.check_image(img_tag): 
+                src_tag = None
+                try:
+                    src_tag = img_tag["src"]
+                except KeyError:
+                    print(f"Found <img> tag without 'src' attribute")
+                    logger.warning(f"{self.seed} - Found <img> tag without 'src' attribute")
+                    continue 
 
-                    # Check the image extension
-                    if "jpg" in src_tag or "jpeg" in src_tag or "png" in src_tag:
-                        images.append(src_tag)
-                    else:
-                        logger.info(f"{self.seed} - The image {src_tag} hasn't the right extension")
+                # Check the image extension
+                if "jpg" in src_tag or "jpeg" in src_tag or "png" in src_tag:
+                    images.append(src_tag)
+                else:
+                    logger.info(f"{self.seed} - The image {src_tag} hasn't the right extension")
 
         print(f"Number of images to download for this web page: {len(images)}")
         logger.info(f"Number of images to download for this web page: {len(images)}")
@@ -318,7 +315,7 @@ class Crawler:
         soup = BeautifulSoup(web_page.content, "html.parser", from_encoding="iso-8859-1")
         html_tag = soup.find("html")
 
-        if html_tag and html_tag.get("lang") == "en":
+        if html_tag and (html_tag.get("lang") == "en" or html_tag.get("lang") == "fr"):
             print("The web page is written in english")
             return True
         else:
@@ -482,6 +479,7 @@ class Crawler:
                         # Check whether the web page is valid or not.
                         if self.captcha_detector.has_captcha(web_page.content) or not self.validate(web_page):
                             print("The web page contains a captcha")
+                            # self.filesaver.enqueue(web_page, visited[url])
 
                             # Remove the used cookie
                             self.cookie_handler.remove_cookie(used_cookie)
@@ -507,8 +505,9 @@ class Crawler:
                         
                         # Check if the page is written in English
                         if not self.check_webpage_lang(web_page):
-                            print("The web page is not written in English")
-                            logger.info(f"{self.seed} the web page is not written in English")
+                            print("The current web page is not written in English")
+                            logger.info(f"The current web page is not written in English. URL: {url}")
+                            # self.filesaver.enqueue(web_page, visited[url]) 
                             continue
                         
                         # Check if the current web page is in the right category
@@ -652,12 +651,14 @@ class Crawler:
         self.monitor.stop_program()
 
         # Waiting that the image saver queue is empty
+        print("Waiting the IMAGE SAVER...")
         while not self.imagesaver.is_empty():
             time.sleep(1)
 
         self.imagesaver.stop()
 
         # Waiting that the file saver queue is empty
+        print("Waiting the FILE SAVER...")
         while not self.filesaver.is_empty():
             time.sleep(1)
         
