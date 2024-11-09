@@ -10,24 +10,28 @@ from io import BytesIO
 import traceback
 import base64 # To decode the images in base64
 import logging
+import requests
 
 # Local imports
+from scrapers.cocorico_scraper import CocoricoScraper
 import utils.fileutils as file_utils
 from handler import TorHandler
+from scrapers import Scraper
 
 
 logger = logging.getLogger("CRATOR")
 
 class ImageSaver:
-    def __init__(self, website, save_path, image_mapping_path, macro_category, micro_category,tor_handler:TorHandler, base64_flag:bool=True, n_threads=1):
+    def __init__(self, website, save_path, image_mapping_path, macro_category, micro_category, scraper: Scraper, tor_handler:TorHandler, base64_flag:bool, n_threads=1):
         """
         :param website: website name
         :param save_path: the file path to store the images
         :param image_mapping_path: the file path of the csv file to store the mapping between images and urls
-        :param macro_category: macro category of the drugs
-        :param micro_category: micro category of the drugs
-        :param tor_handler: an instance of TorHandler to make an http request
-        :param flag_relative_url: True if the image url are relative url, False otherwise
+        :param macro_category: drugs macro-category
+        :param micro_category: drugs micro-category
+        :param scraper: an instance of Scraper class
+        :param tor_handler: an instance of TorHandler to make an HTTP request
+        :param base64_flag: True if images are encoded in base64, False otherwise
         """
         self.n_threads = n_threads
         self.save_path = save_path
@@ -41,6 +45,7 @@ class ImageSaver:
         self.running = True
         self.tor_handler = tor_handler
         self.base64_flag = base64_flag
+        self.scraper = scraper
 
     def enqueue(self, src_image, url, index_node:int, depth_node:int, cookie, count:int, product_information:dict) -> None:
         """
@@ -68,32 +73,78 @@ class ImageSaver:
     def start(self) -> None:
         threading.Thread(target=self.save, daemon=True).start()
 
-    def get_image_extension(self, content_type) -> str:
+    def get_image_extension(self, src_value) -> str:
         """
         Provides the image extension
-        :param content_type: the content type of the http response
-        :return image extension as string
+        :param src_value: the src attribute content of the <img> tag
+        :return: image extension as string
         """
-        if self.base64_flag:
-            if "jpg" in content_type:
-                return ".jpg"
-            elif "jpeg" in content_type:
-                return ".jpeg"
-            elif "png" in content_type:
-                return ".png"
-            else:
-                print(f"The src content encoded in base64 isn't an image.")
-                return None
+        
+        if "jpg" in src_value:
+            return ".jpg"
+        elif "jpeg" in src_value:
+            return ".jpeg"
+        elif "png" in src_value:
+            return ".png"
         else:
-            if content_type.startswith('image/jpeg'):
-                return ".jpeg"
-            elif content_type.startswith('image/jpg'):
-                return ".jpg"
-            elif content_type.startswith('image/png'):
-                return ".png"
-            else:
-                print(f"The response content type isn't an image. It is {content_type}")
-                return None
+            logger.error(f"IMAGE SAVER - The element {src_value} is not an image!")
+            return None
+
+    def download_base64_image(self, src_value: str):
+        """
+        Download an image encoded in base64.
+        
+        :param src_value: the src attribute content of the <img> tag
+        :return: the decoded image
+        """
+        try:
+            # Decode the base64 encoding
+            image_data = base64.b64decode(src_value.split(',')[1])
+            return image_data
+        except IndexError:
+            logger.error(f"IMAGE SAVER - Unable to split src_value -> {src_value}")
+            return None
+        except AttributeError:
+            logger.error(f"IMAGE SAVER - src_value has no split method -> {src_value}")
+            return None
+        except Exception:
+            logger.error(f"IMAGE SAVER - Exception occured during the decoding of the image -> {src_value}")
+            return None
+
+    def download_url_image(self, web_page_url: str, img_url: str, cookie: str) -> bytes:
+        """
+        Download an image using its URL
+        
+        :param web_page_url: the URL of the web page containing the image
+        :param img_url: the src attribute content of the <img> tag
+        :param cookie: a cookie to be use in the HTTP request
+        :return: the image content in bytes
+        """
+        
+        # Extract the base URL from the web page URL
+        base_url = self.scraper.get_base_url(web_page_url)
+
+        # Resolve the relative path whether img_url has a relative path
+        full_img_url = urljoin(base_url, img_url) if not bool(urlparse(img_url).netloc) else img_url
+
+        # Send an HTTP request to obtain the image
+        try:
+            img_response, _ = self.tor_handler.send_request(full_img_url, cookie)
+
+            response_content_type = img_response.headers.get('content-type')
+            print(f"content-type: {response_content_type}")
+
+            return BytesIO(img_response.content).getvalue()
+        except requests.exceptions.HTTPError as e:
+            # To handle HTTP errors (4xx to 5xx)
+            print(f"HTTP error {e.response.status_code} for URL: {full_img_url}")
+            logger.error(f"HTTP error {e.response.status_code} for URL: {full_img_url}")
+            return None
+        except requests.exceptions.RequestException as e:
+            # To handle other types of request-related errors
+            print(f"IMAGE SAVER - Error occurred: {e} . For URL: {full_img_url}")
+            logger.error(f"IMAGE SAVER - Error occurred: {e} . For URL: {full_img_url}")
+            return None
 
     def save(self) -> None:
         """
@@ -113,62 +164,24 @@ class ImageSaver:
                         image_data = None
                         
                         # Check whether the src content is encoded in base64 
-                        if not self.base64_flag:
-                            img_url = None
-                            # Check if src_tag has a relative path
-                            if not bool(urlparse(src_tag).netloc):
-                                img_url = urljoin(url, src_tag)
-                            else:
-                                img_url = src_tag
-                            
-                            #Send request to obtain the image
-                            img_response, _ = self.tor_handler.send_request(img_url, cookie)
-
-                            # Check if the request was successful
-                            if img_response.status_code == 200:
-                                print("Response status code is 200, success")
-                                response_content_type = img_response.headers.get('content-type')
-                                print(f"content-type: {response_content_type}")
-
-                                image_data = BytesIO(img_response.content)
-                            else:
-                                print(f"Error {img_response.status_code} occured during the download of the image for the following url: {url}")
-                                logger.error(f"IMAGE SAVER - Error {img_response.status_code} occured during the download of the image for the following url: {url}")
+                        if self.base64_flag:
+                            image_data = self.download_base64_image(src_tag)
                         else:
-                            try:
-                                # Decode the base64 encoding
-                                image_data = base64.b64decode(src_tag.split(',')[1])
-                            except IndexError:
-                                logger.error(f"IMAGE SAVER - Unable to split src_tag -> {src_tag}")
-                                continue
-                            except AttributeError:
-                                logger.error(f"IMAGE SAVER - src_tag has no split method -> {src_tag}")
-                                continue
-                            except Exception:
-                                logger.error(f"IMAGE SAVER - Exception occured during the decoding of the image -> {src_tag}")
-                                continue
+                            image_data = self.download_url_image(url, src_tag, cookie)
+
+                        # Skip processing if download failed
+                        if image_data is None:
+                            print(f"IMAGE SAVER - Unable to download the image {src_tag}")
+                            logger.error(f"IMAGE SAVER - Unable to download the image {src_tag}")
+                            continue
 
                         # Get the image extension
                         extension = self.get_image_extension(src_tag)
 
                         if extension is None:
-                            print(f"Unable to download the image ({src_tag}), it has a different extension")
-                            logger.info(f"Unable to download the image ({src_tag}), it has a different extension")
+                            print(f"IMAGE SAVER - Unable to download the image ({src_tag}), it has a different extension")
+                            logger.error(f"IMAGE SAVER - Unable to download the image ({src_tag}), it has a different extension")
                             continue
-                        
-                        """scelta = bool(input("Do you want to show the image before store it?\n"))
-                        if scelta:
-                            try:
-                                # Open image using PIL
-                                print("Show the image")
-                                img = Image.open(BytesIO(image_decoded))
-                                
-                                # Display image
-                                img.show()
-                                img.close()
-                            except Exception as e:
-                                print("Error occurred while displaying the image:")
-                                print(traceback.format_exc())"""
 
                         file_name = f"image{count}_{depth_node}_{index_node}{extension}"
                         dir = os.path.join(self.save_path, file_name)
@@ -179,9 +192,9 @@ class ImageSaver:
                             executor.submit(file_utils.save_image, image_data, dir)
 
                             # Store the mapping image - url
-                            with open(self.image_mapping_file, "a") as csvfile:
+                            with open(self.image_mapping_file, mode="a", newline='', encoding="utf-8") as csvfile:
                                 print("Updating the csv file")
-                                csv_writer = csv.writer(csvfile)
+                                csv_writer = csv.writer(csvfile, quotechar='"', quoting=csv.QUOTE_MINIMAL)
                                 csv_writer.writerow([self.website, file_name, str(index_node)+".html", url, depth_node, index_node, product_information["title"], product_information["description"], product_information["vendor"], product_information["origin"], product_information["destination"], product_information["currency"], product_information["price"], product_information["cryptocurrency"], product_information["crypto_price"], self.macro_category, self.micro_category])
                             time.sleep(0.1)
                         except TimeoutError:
