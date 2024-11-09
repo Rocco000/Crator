@@ -1,6 +1,7 @@
 import yaml
 import os
 from pathlib import Path
+from filelock import FileLock
 
 resource_path = Path(__file__).parent.parent.parent.joinpath("resources")
 
@@ -17,6 +18,9 @@ class Configuration:
         self.crator_path = yml_path
         if not self.crator_path:
             self.crator_path = os.path.join(resource_path, 'crator.yml')
+        
+        # A lock to handle the access to the YAML file
+        self.lock = FileLock(f"{self.crator_path}.lock")
 
         if not os.path.isfile(self.crator_path):
             raise FileNotFoundError(f"Invalid path: '{self.crator_path}' does not exist.")
@@ -181,70 +185,90 @@ class Configuration:
 
         return None
 
-    def remove_cookie(self, seed, cookie):
-        self.load_yaml()
+    def remove_cookie(self, seed: str, cookie: str):
+        """
+        Remove the given cookie from the YAML file.
 
-        cookies = self.config.get('crawler.cookies', [])
+        :param seed: the seed  URL to be crawled
+        :param cookie: a cookie of the seed to be removed
+        """
+        with self.lock:
+            self.load_yaml()
 
-        # Find the selected seed in the cookies list
-        for i, seed_data in enumerate(cookies):
-            if seed_data.get('seed') == seed and 'cookies' in seed_data and isinstance(seed_data['cookies'], list):
-                seed_cookies = seed_data['cookies']
+            cookies = self.config.get('crawler.cookies', [])
 
-                # Remove the specified cookie from the seed's cookies
-                if cookie in seed_cookies:
-                    seed_cookies.remove(cookie)
+            # Find the selected seed in the cookies list
+            for i, seed_data in enumerate(cookies):
+                if seed_data.get('seed') == seed and 'cookies' in seed_data and isinstance(seed_data['cookies'], list):
+                    seed_cookies = seed_data['cookies']
 
-        # Update the modified cookies list in the configuration
-        self.config['crawler.cookies'] = cookies
+                    # Remove the specified cookie from the seed's cookies
+                    if cookie in seed_cookies:
+                        seed_cookies.remove(cookie)
 
-        # Dump modified data back to YAML
-        with open(self.crator_path, 'w') as file:
-            yaml.dump(self.config, file)
+            # Update the modified cookies list in the configuration
+            self.config['crawler.cookies'] = cookies
 
-    def add_cookie(self, seed, cookie):
-        self.load_yaml()
+            # Dump modified data back to YAML
+            with open(self.crator_path, 'w') as file:
+                yaml.dump(self.config, file)
 
-        if 'crawler.cookies' not in self.config:
-            self.config['crawler.cookies'] = []
+    def add_cookie(self, seed: str, cookie: str):
+        """
+        Add a new cookie in the YAML file for the given seed URL.
 
-        cookies = self.config.get('crawler.cookies', [])
+        :param seed: the seed  URL to be crawled
+        :param cookie: a new cookie to be store in the YAML file for the given seed
+        """
+        with self.lock:
+            self.load_yaml()
 
-        # Find the selected seed in the cookies list
-        i = 0
-        fetched = False
-        while i < len(cookies) and not fetched:
-            if cookies[i].get('seed') == seed and 'cookies' in cookies[i] and isinstance(cookies[i]['cookies'], list):
-                cookies[i]['cookies'].append(cookie)
-                fetched = True
-            i += 1
+            if 'crawler.cookies' not in self.config:
+                self.config['crawler.cookies'] = []
 
-        if not fetched:
-            cookies.append({'seed': seed, 'cookies': [cookie]})
+            cookies = self.config.get('crawler.cookies', [])
 
-        # for i, seed_data in enumerate(cookies):
-        #     if seed_data.get('seed') == seed and 'cookies' in seed_data and isinstance(seed_data['cookies'], list):
-        #         seed_data['cookies'].append(cookie)
-        #         break
+            # Find the selected seed in the cookies list
+            i = 0
+            fetched = False
+            while i < len(cookies) and not fetched:
+                if cookies[i].get('seed') == seed and 'cookies' in cookies[i] and isinstance(cookies[i]['cookies'], list):
+                    cookies[i]['cookies'].append(cookie)
+                    fetched = True
+                i += 1
 
-        # Update the modified cookies list in the configuration
-        self.config['crawler.cookies'] = cookies
+            if not fetched:
+                cookies.append({'seed': seed, 'cookies': [cookie]})
 
-        # Dump modified data back to YAML
-        with open(self.crator_path, 'w') as file:
-            yaml.dump(self.config, file)
+            # for i, seed_data in enumerate(cookies):
+            #     if seed_data.get('seed') == seed and 'cookies' in seed_data and isinstance(seed_data['cookies'], list):
+            #         seed_data['cookies'].append(cookie)
+            #         break
 
-    def remove_seed(self, seed):
-        self.load_yaml()
+            # Update the modified cookies list in the configuration
+            self.config['crawler.cookies'] = cookies
 
-        cookies = self.config.get('crawler.cookies', [])
+            # Dump modified data back to YAML
+            with open(self.crator_path, 'w') as file:
+                yaml.dump(self.config, file)
 
-        # Remove the seed and update the modified cookies list in the configuration
-        self.config['crawler.cookies'] = [cookie for cookie in cookies if cookie.get('seed') != seed]
+    def remove_seed(self, seed: str):
+        """
+        Remove the given seed URL from the YAML file.
 
-        if not self.config['crawler.cookies']:
-            del self.config['crawler.cookies']
+        :param seed: the seed URL to be removed
+        """
+        with self.lock:
+            self.load_yaml()
 
-        # Dump modified data back to YAML
-        with open(self.crator_path, 'w') as file:
-            yaml.dump(self.config, file)
+            cookies = self.config.get('crawler.cookies', [])
+
+            # Remove the seed and update the modified cookies list in the configuration
+            self.config['crawler.cookies'] = [cookie for cookie in cookies if cookie.get('seed') != seed]
+
+            if not self.config['crawler.cookies']:
+                del self.config['crawler.cookies']
+
+            # Dump modified data back to YAML
+            with open(self.crator_path, 'w') as file:
+                yaml.dump(self.config, file)
