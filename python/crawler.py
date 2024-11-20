@@ -54,7 +54,7 @@ class Crawler:
         self.max_retries = 5
         self.retries_counter = 0
         self.max_retries_before_renew = 5
-        self.check_cookie = self.config.check_cookie()
+        #self.check_cookie = self.config.check_cookie()
 
         self.seed = seed
         self.login_page = None
@@ -315,7 +315,7 @@ class Crawler:
         soup = BeautifulSoup(web_page.content, "html.parser", from_encoding="iso-8859-1")
         html_tag = soup.find("html")
 
-        if html_tag and (html_tag.get("lang") == "en" or html_tag.get("lang") == "fr"):
+        if html_tag and html_tag.get("lang") == "en":
             print("The web page is written in english")
             return True
         else:
@@ -412,12 +412,12 @@ class Crawler:
 
             n_images = 0
             n_wrong_category = 0
-            count = 0
+            #count = 0
 
             while (not self.downloader.is_empty() and n_links_crawled < self.max_link and not cookie_timeout and
                    time.time() - start_time < self.max_crawl_time):
                 
-                count += 1
+                #count += 1
 
                 try:
                     #ottiene tutti i task completati, quindi le pagine del dark web
