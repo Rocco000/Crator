@@ -40,7 +40,7 @@ The project goal is to develop a web crawler tailored for extracting data from d
 ## 🧑🏻‍💻 Usage
 
  To run the crawler, you should setup the YAML file and the `seed.txt` in the resources folder. Follow these steps to configure the YAML file:
- * Define a path in the `data_directory` field where the crawled data will be stored.
+ * Define a path in the `data_directory` field where the crawled data will be stored. I suggest you use this format: `your_local_path/marketplace_name/macro_category/micro_category/`.
  * Define the `project_name` field.
  * Define in the `http_proxy` the HTTP proxy address to route traffic through Tor. This should be in the format 'socks5h://127.0.0.1:PORT', where PORT corresponds to the SOCKS port on which the **first** Tor instance is listening.
  * Define in the `second_tor_proxy` the HTTP proxy address to route traffic through Tor. This should be in the format 'socks5h://127.0.0.1:PORT', where PORT corresponds to the SOCKS port on which the **second** Tor instance is listening.
@@ -79,7 +79,9 @@ The project goal is to develop a web crawler tailored for extracting data from d
  ss -nlt
  ```
 
- Then open a new terminal in your IDE and split it. In the first window run the crator.py file to crawl the dark web marketplace, instead in the second window run the extract_cookie.py file to acquire a new cookie to store in the YAML file.
+ Then open a new terminal in your IDE and split it. In the first window run the `crator.py` file to crawl the dark web marketplace, instead in the second window run the `extract_cookie.py` file to acquire a new cookie to store in the YAML file.
+
+ Whether you have run the crawler several times, you can merge the crawled data in a new folder by executing the `merge_data.py` script.
 
 ## Future works
 
