@@ -1,0 +1,23 @@
+cookie_attempts: 3
+cookie_waiting_time: 10
+crawler.cookies:
+- cookies:
+  - cookie_value
+  seed: onion_link
+crawler.depth: 5
+crawler.max_links: 1000000
+crawler.max_time: 86400
+crawler.random_wait: true
+crawler.wait_request: 3000
+data_directory: your_local_path/marketplace_name/macro_category/micro_category/
+http_proxy: proxy_port_of_first_tor_process
+macro_category: macro_category_value
+marketplace: marketplace_name
+micro_category: micro_category_value
+project_name: folder_name
+restart_tor: 5
+second_tor_port: port_of_the_second_tor_process
+second_tor_proxy: proxy_port_of_second_tor_process
+tor_password: your_tor_password
+tor_port: port_of_the_first_tor_process
+venv_path: your_venv_path/bin/python
